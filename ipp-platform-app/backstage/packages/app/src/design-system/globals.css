@@ -1,0 +1,547 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer reset, mui-override, components;
+
+:root {
+  /* ── DHL Brand tokens ── */
+  --dhl-yellow:         #FFCC00;
+  --dhl-yellow-light:   #FFF4CC;
+  --dhl-yellow-surface: #FFFBEB;
+  --dhl-red:            #D40511;
+  --dhl-red-deep:       #B0000B;
+  --dhl-border-warm:    #F1E3A3;
+  --dhl-black:          #1A1A1A;
+  --dhl-charcoal:     #2B2B2B;
+  --dhl-slate:        #3D3D3D;
+  --dhl-grey100:      #F5F5F5;
+  --dhl-grey200:      #EBEBEB;
+  --dhl-grey600:      #6B6B6B;
+
+  /* ── Design-system tokens (light mode) ── */
+  --ds-bg:              #FAFAF8;
+  --ds-surface:         #FFFFFF;
+  --ds-surface-alt:     #F5F5F5;
+  --ds-hairline:        #E5E7EB;
+
+  --ds-text-primary:    #1A1A1A;
+  --ds-text-secondary:  #6B6B6B;
+  --ds-text-tertiary:   #9A9A9A;
+
+  --ds-focus:           #D40511;
+  --ds-success:         #22C55E;
+  --ds-warn:            #F59E0B;
+  --ds-error:           #D40511;
+
+  /* Legacy aliases (kept for backwards compat with any remaining references) */
+  --app-bg:      var(--ds-bg);
+  --surface:     var(--ds-surface);
+  --hairline:    var(--ds-hairline);
+  --surface-alt: var(--ds-surface-alt);
+
+  /* Chip / badge backgrounds + text + borders */
+  --ds-chip-info-bg:       rgba(212,5,17,0.08);
+  --ds-chip-info-text:     #D40511;
+  --ds-chip-info-border:   rgba(212,5,17,0.22);
+  --ds-chip-success-bg:    rgba(34,197,94,0.10);
+  --ds-chip-success-text:  #15803D;
+  --ds-chip-success-border:rgba(34,197,94,0.25);
+  --ds-chip-warn-bg:       rgba(245,158,11,0.10);
+  --ds-chip-warn-text:     #92400E;
+  --ds-chip-warn-border:   rgba(245,158,11,0.25);
+  --ds-chip-error-bg:      rgba(212,5,17,0.08);
+  --ds-chip-error-text:    #D40511;
+  --ds-chip-error-border:  rgba(212,5,17,0.22);
+  --ds-chip-neutral-bg:    rgba(107,107,107,0.08);
+  --ds-chip-neutral-text:  #6B6B6B;
+  --ds-chip-neutral-border:rgba(107,107,107,0.18);
+
+  /* Domain accent — Crossplane / Composition */
+  --clr-compose:           #7c3aed;
+  --clr-compose-bg:        rgba(124,58,237,0.08);
+  --clr-compose-border:    rgba(124,58,237,0.20);
+
+  /* Shadows */
+  --ds-shadow-resting:  0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --ds-shadow-hover:    0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] {
+  /* ── DHL dark mode — warm charcoal, not cold navy ── */
+  --dhl-yellow-light:   rgba(255,204,0,0.08);   /* subtle tint in dark mode */
+  --dhl-border-warm:    rgba(255,204,0,0.18);
+  --ds-bg:              #2B2B2B;
+  --ds-surface:         #2F2F2F;
+  --ds-surface-alt:     #363636;
+  --ds-hairline:        rgba(255,255,255,0.10);
+
+  --ds-text-primary:    #F5F5F5;
+  --ds-text-secondary:  #B0B0B0;
+  --ds-text-tertiary:   #757575;
+
+  /* Yellow and Red stay exact — they are the brand constants */
+  --ds-focus:           #FFCC00;
+  --ds-success:         #4ADE80;
+  --ds-warn:            #FCD34D;
+  --ds-error:           #D40511;
+
+  /* Legacy aliases */
+  --app-bg:      var(--ds-bg);
+  --surface:     var(--ds-surface);
+  --hairline:    var(--ds-hairline);
+  --surface-alt: var(--ds-surface-alt);
+
+  /* Chip / badge — dark semantic tints */
+  --ds-chip-info-bg:       rgba(255,204,0,0.12);
+  --ds-chip-info-text:     #FFD740;
+  --ds-chip-info-border:   rgba(255,204,0,0.28);
+  --ds-chip-success-bg:    rgba(74,222,128,0.12);
+  --ds-chip-success-text:  #4ADE80;
+  --ds-chip-success-border:rgba(74,222,128,0.28);
+  --ds-chip-warn-bg:       rgba(252,211,77,0.12);
+  --ds-chip-warn-text:     #FCD34D;
+  --ds-chip-warn-border:   rgba(252,211,77,0.28);
+  --ds-chip-error-bg:      rgba(212,5,17,0.14);
+  --ds-chip-error-text:    #FF4D57;
+  --ds-chip-error-border:  rgba(212,5,17,0.32);
+  --ds-chip-neutral-bg:    rgba(176,176,176,0.10);
+  --ds-chip-neutral-text:  #B0B0B0;
+  --ds-chip-neutral-border:rgba(176,176,176,0.20);
+
+  /* Domain accent — lighter for dark mode readability */
+  --clr-compose:           #A78BFA;
+  --clr-compose-bg:        rgba(167,139,250,0.12);
+  --clr-compose-border:    rgba(167,139,250,0.28);
+
+  --ds-shadow-resting:  0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.3);
+  --ds-shadow-hover:    0 4px 12px rgba(0,0,0,0.45), 0 16px 40px rgba(0,0,0,0.5);
+}
+
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #root { margin: 0; height: 100%; background: var(--ds-bg, #FAFAF8); }
+  body {
+    font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    color: var(--ds-text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button { font: inherit; cursor: pointer; }
+  a { color: inherit; text-decoration: none; }
+  img, svg { display: block; max-width: 100%; }
+}
+
+@layer mui-override {
+  [class*="MuiAppBar-root"],
+  [class*="MuiToolbar-root"] {
+    display: none !important;
+  }
+
+  /* Hide Backstage's built-in wave/gradient page header.
+     Targets any <header> inside .apple-content (Backstage page headers live there).
+     Our .apple-topbar is a sibling of .apple-content, not a child, so it is unaffected. */
+  .apple-content header,
+  [class*="BackstageHeader"],
+  [class*="BackstageSubHeader"],
+  [class*="makeStyles-header-"] {
+    display: none !important;
+  }
+
+  /* MuiPaper — filter panels, form surfaces, popovers: clean white.
+     Must use !important — MUI v5 emotion CSS is injected after static CSS. */
+  [class*="MuiPaper-root"] {
+    background-color: var(--ds-surface) !important;
+    border: 1px solid var(--ds-hairline) !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    color: var(--ds-text-primary) !important;
+  }
+  [data-theme="dark"] [class*="MuiPaper-root"] {
+    background-color: var(--ds-surface) !important;
+    border-color: var(--ds-hairline) !important;
+  }
+
+  /* MuiCard — template / entity cards keep a clean white body */
+  [class*="MuiCard-root"] {
+    background-color: var(--ds-surface) !important;
+    border: 1px solid var(--ds-hairline) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--ds-shadow-resting) !important;
+  }
+
+  /* ── Backstage ItemCardHeader (template & entity cards) ──────────────────
+     Force flat DHL yellow background + DHL red text on ALL card headers.
+     The pageTheme gradient is embedded as a base64 SVG background-image,
+     so we must override both background-color AND background-image.       */
+  [class*="BackstageItemCardHeader"],
+  [class*="ItemCardHeader-root"],
+  [class*="MuiCard-root"] [class*="MuiCardHeader-root"],
+  [class*="BackstageItemCardHeader-root"] {
+    background-color: #FFCC00 !important;
+    background-image: none !important;
+  }
+  [class*="BackstageItemCardHeader"] *,
+  [class*="ItemCardHeader-root"] *,
+  [class*="MuiCard-root"] [class*="MuiCardHeader-root"] * {
+    color: #B0000B !important;
+    text-shadow: none !important;
+  }
+
+  /* Choose / action buttons inside template cards — keep DHL red */
+  [class*="BackstageItemCardHeader"] button,
+  [class*="ItemCardHeader-root"] button {
+    color: #ffffff !important;
+    background-color: #D40511 !important;
+  }
+
+  /* Backstage page/content containers — reset to plain block flow so they */
+  /* sit naturally inside AppleShell's scrollable .apple-content area      */
+  [class*="BackstagePage-root"] {
+    all: unset;
+    display: block;
+    width: 100%;
+  }
+  [class*="BackstageContent-root"] {
+    all: unset;
+    display: block;
+    padding: 0;
+    width: 100%;
+  }
+
+  [class*="MuiButton-root"] {
+    background: transparent;
+    box-shadow: none;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    font-family: inherit !important;
+  }
+
+  [class*="MuiButton-root"] [class*="MuiTouchRipple-root"] { display: none; }
+
+  [class*="BackstageSidebar-root"] {
+    background: var(--ds-surface) !important;
+    border-right: 1px solid var(--ds-hairline) !important;
+    width: 240px !important;
+  }
+
+  [class*="BackstageSidebarItem-root"],
+  [class*="BackstageOldSidebar-root"] {
+    all: unset;
+    display: revert;
+  }
+
+  /* ── Backstage filter panel — list item buttons (Starred, All, etc.) ── */
+  [class*="MuiListItemButton-root"],
+  [class*="MuiListItem-root"][class*="MuiButtonBase-root"] {
+    border-radius: 999px !important;
+    background-color: rgba(255,255,255,0.50) !important;
+    color: var(--ds-text-primary) !important;
+    margin: 2px 0 !important;
+  }
+  [class*="MuiListItemButton-root"]:hover,
+  [class*="MuiListItem-root"][class*="MuiButtonBase-root"]:hover {
+    background-color: rgba(255,204,0,0.35) !important;
+  }
+  [class*="MuiListItemButton-root"].Mui-selected,
+  [class*="MuiListItem-root"][class*="MuiButtonBase-root"].Mui-selected {
+    background-color: rgba(212,5,17,0.12) !important;
+    color: var(--dhl-red) !important;
+    font-weight: 600 !important;
+  }
+
+  /* ── Backstage filter select / autocomplete dropdowns (CATEGORIES etc.) ── */
+  [class*="MuiOutlinedInput-root"] {
+    background-color: rgba(255,255,255,0.65) !important;
+    border-radius: 8px !important;
+  }
+  [class*="MuiOutlinedInput-notchedOutline"] {
+    border-color: var(--dhl-border-warm) !important;
+  }
+  [class*="MuiOutlinedInput-root"]:hover [class*="MuiOutlinedInput-notchedOutline"],
+  [class*="MuiOutlinedInput-root"].Mui-focused [class*="MuiOutlinedInput-notchedOutline"] {
+    border-color: var(--dhl-red) !important;
+  }
+  /* Dropdown popup list also gets yellow-light */
+  [class*="MuiAutocomplete-listbox"],
+  [class*="MuiSelect-select"] ~ [class*="MuiMenu-paper"] {
+    background-color: var(--dhl-yellow-light) !important;
+  }
+
+  /* Filter label text above dropdowns (CATEGORIES / Tags / Owner) */
+  .apple-content [class*="MuiFormLabel-root"],
+  .apple-content [class*="MuiInputLabel-root"] {
+    color: var(--ds-text-secondary) !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+  }
+
+  /* Elevation shadows — only for elevated cards, not filter panels */
+  [class*="MuiCard-root"][class*="MuiPaper-elevation"] {
+    box-shadow: var(--ds-shadow-resting) !important;
+  }
+
+  [class*="MuiTypography-root"] {
+    font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+  }
+
+  [class*="BackstagePageLayout-root"] {
+    all: unset;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  [class*="MuiChip-root"] {
+    border-radius: 999px !important;
+    font-family: inherit !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+
+  [class*="MuiTouchRipple-root"] { display: none !important; }
+
+  /* DHL focus rings — red in light mode, yellow in dark */
+  *:focus-visible {
+    outline: 2px solid var(--ds-focus);
+    outline-offset: 2px;
+  }
+
+  [data-theme="dark"] *:focus-visible {
+    outline-color: var(--dhl-yellow);
+  }
+}
+
+@layer components {
+  /* ── DHL Signature Rule Line ─────────────────────────────────────────────── */
+  /* Used as the first child of every major section. The one purely decorative  */
+  /* element — it is the newspaper masthead rule. Used consistently, nowhere else. */
+  .dhl-rule {
+    display: block;
+    width: 100%;
+    height: 2px;
+    background: var(--dhl-yellow);
+    border: none;
+    margin: 0 0 20px;
+    flex-shrink: 0;
+  }
+
+  /* ── Shell layout ─────────────────────────────────────────────────────────── */
+  .apple-shell {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background: var(--ds-bg);
+    font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  .apple-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    height: 100vh;
+    background: var(--ds-surface);
+    border-right: 3px solid var(--dhl-yellow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 200ms ease-in-out;
+  }
+
+  [data-theme="dark"] .apple-sidebar {
+    border-right: 1px solid var(--ds-hairline);
+  }
+
+  .apple-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .apple-topbar {
+    height: 56px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    background: var(--dhl-yellow);
+    border-bottom: 3px solid var(--dhl-red);
+    box-shadow: none;
+    gap: 12px;
+    transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .apple-topbar--scrolled {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  }
+
+  [data-theme="dark"] .apple-topbar {
+    background: var(--ds-surface);
+    border-bottom: 3px solid var(--dhl-red);
+    box-shadow: none;
+  }
+
+  [data-theme="dark"] .apple-topbar--scrolled {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+
+  /* ── Page-enter animation ─────────────────────────────────────────────────── */
+  @keyframes ds-page-enter {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .ds-page-enter {
+    animation: ds-page-enter 220ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  /* Stagger children for the "row-by-row" feel */
+  .ds-page-enter > * { animation: ds-page-enter 220ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+  .ds-page-enter > *:nth-child(1) { animation-delay: 0ms; }
+  .ds-page-enter > *:nth-child(2) { animation-delay: 60ms; }
+  .ds-page-enter > *:nth-child(3) { animation-delay: 120ms; }
+  .ds-page-enter > *:nth-child(4) { animation-delay: 180ms; }
+  .ds-page-enter > *:nth-child(5) { animation-delay: 240ms; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-page-enter,
+    .ds-page-enter > * { animation: none; }
+  }
+
+  /* ── Metric display classes ───────────────────────────────────────────────── */
+  .ds-metric-label {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ds-text-tertiary);
+  }
+
+  .ds-metric-value {
+    margin: 0 0 4px;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--ds-text-primary);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ds-metric-sub {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ds-text-secondary);
+    line-height: 1.4;
+  }
+
+  /* ── Unavailable banner ───────────────────────────────────────────────────── */
+  .ds-unavailable-banner {
+    padding: 16px;
+    background: var(--ds-chip-warn-bg);
+    border: 1px solid var(--ds-chip-warn-border);
+    border-left: 3px solid var(--ds-warn);
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .ds-unavailable-banner .title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ds-chip-warn-text);
+  }
+
+  .ds-unavailable-banner .reason {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ds-text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ── Content scroll area ─────────────────────────────────────────────────── */
+  .apple-content {
+    flex: 1;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    padding: 28px;
+  }
+
+  /* ── Custom scrollbar — thin yellow thumb ────────────────────────────────── */
+  .apple-content::-webkit-scrollbar,
+  .apple-sidebar nav::-webkit-scrollbar {
+    width: 6px;
+  }
+  .apple-content::-webkit-scrollbar-track,
+  .apple-sidebar nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .apple-content::-webkit-scrollbar-thumb,
+  .apple-sidebar nav::-webkit-scrollbar-thumb {
+    background: var(--dhl-red);
+    border-radius: 3px;
+    opacity: 0.6;
+  }
+  .apple-content::-webkit-scrollbar-thumb:hover,
+  .apple-sidebar nav::-webkit-scrollbar-thumb:hover {
+    background: #A30010;
+    opacity: 1;
+  }
+
+  [data-theme="dark"] .apple-content::-webkit-scrollbar-thumb,
+  [data-theme="dark"] .apple-sidebar nav::-webkit-scrollbar-thumb {
+    background: var(--dhl-yellow);
+  }
+  [data-theme="dark"] .apple-content::-webkit-scrollbar-thumb:hover,
+  [data-theme="dark"] .apple-sidebar nav::-webkit-scrollbar-thumb:hover {
+    background: #E6B800;
+  }
+
+  /* ── Table alternating rows ──────────────────────────────────────────────── */
+  .ds-table tbody tr:nth-child(even) {
+    background: rgba(255,204,0,0.03);
+  }
+  .ds-table tbody tr:hover {
+    background: rgba(255,204,0,0.07);
+  }
+  .ds-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--ds-surface);
+  }
+
+  /* ── Shimmer skeleton animation ──────────────────────────────────────────── */
+  @keyframes ds-shimmer {
+    0%   { background-position: -600px 0; }
+    100% { background-position:  600px 0; }
+  }
+
+  .ds-skel {
+    background: linear-gradient(
+      90deg,
+      var(--ds-surface-alt) 25%,
+      var(--ds-surface) 50%,
+      var(--ds-surface-alt) 75%
+    );
+    background-size: 1200px 100%;
+    animation: ds-shimmer 1.6s ease-in-out infinite;
+    border-radius: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-skel { animation: none; background: var(--ds-surface-alt); }
+  }
+
+  /* ── Reduced motion global ───────────────────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+    }
+  }
+}

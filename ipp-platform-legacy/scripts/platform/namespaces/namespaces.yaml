@@ -1,0 +1,193 @@
+# All platform namespaces
+# Ordered by dependency: infrastructure namespaces first, then app namespaces
+
+# -----------------------------------------------------------------
+# CNI / network layer
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cilium
+  labels:
+    kubernetes.io/metadata.name: cilium
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: cni
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# -----------------------------------------------------------------
+# ArgoCD - GitOps engine
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    kubernetes.io/metadata.name: argocd
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: gitops
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# -----------------------------------------------------------------
+# Crossplane - control plane abstraction
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crossplane-system
+  labels:
+    kubernetes.io/metadata.name: crossplane-system
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: crossplane
+    # Crossplane pods need elevated privileges for webhook certs
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+# -----------------------------------------------------------------
+# Platform namespace (umbrella for platform tooling helm releases)
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    kubernetes.io/metadata.name: platform
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: platform-services
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# -----------------------------------------------------------------
+# Backstage - IIP portal
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backstage
+  labels:
+    kubernetes.io/metadata.name: backstage
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: developer-portal
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# -----------------------------------------------------------------
+# Monitoring (Prometheus, Grafana, Alertmanager)
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    kubernetes.io/metadata.name: monitoring
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: observability
+    # Prometheus node-exporter needs host access
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# -----------------------------------------------------------------
+# SPIRE - SPIFFE workload identity
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire
+  labels:
+    kubernetes.io/metadata.name: spire
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: identity
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# -----------------------------------------------------------------
+# OpenCost - cost monitoring
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opencost
+  labels:
+    kubernetes.io/metadata.name: opencost
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: cost-management
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+# -----------------------------------------------------------------
+# AIOps namespace (ML/AI operational tooling)
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiops
+  labels:
+    kubernetes.io/metadata.name: aiops
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: aiops
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# -----------------------------------------------------------------
+# OPA Gatekeeper - policy engine
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper-system
+  labels:
+    kubernetes.io/metadata.name: gatekeeper-system
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: policy
+    # Gatekeeper webhooks require elevated privilege
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    # Required label to exempt Gatekeeper from its own webhooks
+    admission.gatekeeper.sh/ignore: "no-self-managing"
+---
+# -----------------------------------------------------------------
+# Kyverno - policy engine (alternative / complementary to Gatekeeper)
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    kubernetes.io/metadata.name: kyverno
+    platform.iip.com/tier: infrastructure
+    platform.iip.com/component: policy
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# -----------------------------------------------------------------
+# Employee Portal - demo application namespace
+# -----------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: employee-portal
+  labels:
+    kubernetes.io/metadata.name: employee-portal
+    platform.iip.com/tier: application
+    platform.iip.com/team: employee-platform
+    platform.iip.com/cost-center: demo-001
+    platform.iip.com/environment: dev
+    platform.iip.com/managed: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+  annotations:
+    platform.iip.com/owner: "employee-platform"
+    platform.iip.com/created-by: "crossplane"

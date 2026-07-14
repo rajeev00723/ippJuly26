@@ -1,0 +1,46 @@
+# ProviderConfig for provider-kubernetes using in-cluster credentials.
+# The provider pod runs with a ServiceAccount that has the necessary RBAC,
+# so we use the "InjectedIdentity" source which picks up the pod's mounted
+# service-account token automatically.
+#
+# Apply AFTER the Provider is installed and its pod is Running.
+#
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-kubernetes
+  namespace: crossplane-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-kubernetes-cluster-admin
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+subjects:
+  - kind: ServiceAccount
+    name: provider-kubernetes
+    namespace: crossplane-system
+  # UXP installs provider-kubernetes as crossplane-contrib-provider-kubernetes;
+  # its SA gets a hash suffix from the revision digest. Both SAs need cluster-admin
+  # so that InjectedIdentity ProviderConfig works regardless of which Provider object is active.
+  - kind: ServiceAccount
+    name: crossplane-contrib-provider-kubernetes-3c1712b01e08
+    namespace: crossplane-system
+roleRef:
+  kind: ClusterRole
+  # cluster-admin grants full access; scope down in production
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: kubernetes.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  credentials:
+    source: InjectedIdentity

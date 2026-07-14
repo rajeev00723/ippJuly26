@@ -1,0 +1,206 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: employee-backend
+  namespace: employee-portal
+  labels:
+    app: backend
+    owner: platform-team
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        owner: platform-team
+        environment: dev
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: employee-backend
+          image: ipp-platform/employee-backend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          env:
+            - name: PORT
+              value: "8080"
+            - name: NAMESPACE
+              value: employee-portal
+            - name: DB_ENABLED
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: employee-backend
+  namespace: employee-portal
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: employee-frontend
+  namespace: employee-portal
+  labels:
+    app: frontend
+    owner: platform-team
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        owner: platform-team
+        environment: dev
+    spec:
+      containers:
+        - name: employee-frontend
+          image: ipp-platform/employee-frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          env:
+            - name: BACKEND_SVC_URL
+              value: "http://employee-backend.employee-portal.svc.cluster.local:8080"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: employee-frontend
+  namespace: employee-portal
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: employee-portal-ingress
+  namespace: employee-portal
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: employee.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: employee-frontend
+                port:
+                  number: 80
+    - host: employee.dpcs.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: employee-frontend
+                port:
+                  number: 80
+---
+# Hubble traffic generator — generates continuous flows in employee-portal so
+# the Hubble UI at http://hubble.ipp.local always has something to show in demos.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubble-traffic-gen
+  namespace: employee-portal
+  labels:
+    app: hubble-traffic-gen
+    owner: platform-team
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubble-traffic-gen
+  template:
+    metadata:
+      labels:
+        app: hubble-traffic-gen
+        owner: platform-team
+        environment: dev
+    spec:
+      containers:
+        - name: gen
+          image: curlimages/curl:8.5.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                curl -sf -H "Host: employee.ipp.local" \
+                  http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/ \
+                  -o /dev/null || true
+                curl -sf -H "Host: employee.ipp.local" \
+                  http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/health \
+                  -o /dev/null || true
+                sleep 3
+              done
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi

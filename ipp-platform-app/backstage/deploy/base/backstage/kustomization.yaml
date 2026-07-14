@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+
+namespace: backstage
+
+commonLabels:
+  platform.ipp.dhl.com/managed-by: ipp-platform
+  platform.ipp.dhl.com/component: backstage

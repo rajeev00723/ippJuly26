@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire
+  labels:
+    kubernetes.io/metadata.name: spire
+    app.kubernetes.io/managed-by: ipp-platform
+    platform.ipp.dhl.com/version: v1
+    environment: demo
+    owner: platform-team
+    cost-center: platform

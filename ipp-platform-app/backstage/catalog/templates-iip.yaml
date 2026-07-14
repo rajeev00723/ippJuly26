@@ -1,0 +1,619 @@
+# =============================================================================
+# IPP — IIP GitOps Scaffolder Templates
+# These templates call IIP middleware (via Backstage proxy) which writes
+# Crossplane XR claims to ipp-platform-claims/ via PR → Argo CD → Crossplane.
+#
+# Architecture: DHL_IIP_GitOps_Repository_Architecture.docx
+# Backstage approach: Approach G (config overlay, no core modification)
+# Proxy endpoint: /api/proxy/iip → http://localhost:3001
+# =============================================================================
+
+# ── 1 of 6 — Kubernetes Cluster ───────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-cluster
+  title: "[IIP] Provision Kubernetes Cluster"
+  description: >
+    Provision a Kubernetes cluster via IIP GitOps flow.
+    IIP writes a Crossplane XIPPCluster claim to Git → Argo CD syncs →
+    Crossplane reconciles (KIND locally, AKS on Azure).
+  tags: [infrastructure, gitops, crossplane, cluster, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "10"
+    ipp.dhl.com/resource-type: "XIPPCluster"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Cluster Configuration
+      required: [resourceName, targetProvider, environment, ownerTeam]
+      properties:
+        resourceName:
+          title: Cluster Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. dev-cluster-01, ml-kind-test'
+        targetProvider:
+          title: Target Provider
+          type: string
+          enum: [kind, azure]
+          enumNames: ["Local KIND (immediate)", "Azure AKS (requires Azure credentials)"]
+          default: kind
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+        nodeCount:
+          title: Node Count
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 3
+        kubernetesVersion:
+          title: Kubernetes Version
+          type: string
+          enum: ["1.29", "1.30", "1.31"]
+          default: "1.31"
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPCluster
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          costCenter: ${{ parameters.costCenter }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            nodeCount: ${{ parameters.nodeCount }}
+            kubernetesVersion: ${{ parameters.kubernetesVersion }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "Cluster provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }} | Request: ${{ steps['call-iip'].output.body.requestId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+      - title: "Track in Catalog"
+        url: /catalog/default/component/${{ parameters.resourceName }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"
+      - title: Request ID
+        content: "`${{ steps['call-iip'].output.body.requestId }}`"
+
+---
+# ── 2 of 6 — Virtual Machine ──────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-vm
+  title: "[IIP] Provision Virtual Machine"
+  description: >
+    Provision a VM via IIP GitOps flow.
+    Supports vSphere, Azure, and GCP targets.
+    IIP writes a Crossplane XIPPVirtualMachine claim to Git.
+  tags: [infrastructure, gitops, crossplane, vm, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "11"
+    ipp.dhl.com/resource-type: "XIPPVirtualMachine"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Virtual Machine Configuration
+      required: [resourceName, targetProvider, environment, ownerTeam]
+      properties:
+        resourceName:
+          title: VM Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        targetProvider:
+          title: Target Provider
+          type: string
+          enum: [vsphere, azure, gcp]
+          enumNames: ["VMware vSphere", "Microsoft Azure", "Google Cloud"]
+          default: azure
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+        vmSize:
+          title: VM Size
+          type: string
+          default: Standard_B2s
+          ui:help: 'Azure: Standard_B2s | GCP: e2-medium | vSphere: small'
+        osType:
+          title: OS Type
+          type: string
+          enum: [linux, windows]
+          default: linux
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPVirtualMachine
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          costCenter: ${{ parameters.costCenter }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            vmSize: ${{ parameters.vmSize }}
+            osType: ${{ parameters.osType }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "VM provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"
+
+---
+# ── 3 of 6 — AppBox ───────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-appbox
+  title: "[IIP] Provision AppBox (Application Runtime)"
+  description: >
+    Deploy an application workload via IIP GitOps flow.
+    IIP writes a Crossplane XIPPAppBox claim → Helm release on target cluster.
+  tags: [infrastructure, gitops, crossplane, appbox, helm, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "12"
+    ipp.dhl.com/resource-type: "XIPPAppBox"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: AppBox Configuration
+      required: [resourceName, targetProvider, environment, image, ownerTeam]
+      properties:
+        resourceName:
+          title: Application Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        targetProvider:
+          title: Target Cluster
+          type: string
+          enum: [kind, azure, gcp]
+          enumNames: ["Local KIND", "Azure AKS", "GCP GKE"]
+          default: kind
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        image:
+          title: Container Image
+          type: string
+          default: nginx:latest
+          ui:help: 'e.g. nginx:latest, myapp:v1.2.3'
+        replicaCount:
+          title: Replica Count
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 10
+        port:
+          title: Container Port
+          type: integer
+          default: 8080
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPAppBox
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          costCenter: ${{ parameters.costCenter }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            image: ${{ parameters.image }}
+            replicaCount: ${{ parameters.replicaCount }}
+            port: ${{ parameters.port }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "AppBox provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"
+
+---
+# ── 4 of 6 — Database ─────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-database
+  title: "[IIP] Provision Managed Database"
+  description: >
+    Provision a managed database via IIP GitOps flow.
+    Supports Azure Flexible Server (Postgres/MySQL) and GCP Cloud SQL.
+  tags: [infrastructure, gitops, crossplane, database, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "13"
+    ipp.dhl.com/resource-type: "XIPPDatabase"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Database Configuration
+      required: [resourceName, targetProvider, environment, ownerTeam]
+      properties:
+        resourceName:
+          title: Database Instance Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        targetProvider:
+          title: Cloud Provider
+          type: string
+          enum: [azure, gcp]
+          enumNames: ["Azure Flexible Server", "GCP Cloud SQL"]
+          default: azure
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        engine:
+          title: Database Engine
+          type: string
+          enum: [postgres, mysql]
+          default: postgres
+        version:
+          title: Engine Version
+          type: string
+          enum: ["14", "15", "16"]
+          default: "14"
+        storageSizeGb:
+          title: Storage (GB)
+          type: integer
+          default: 32
+          minimum: 5
+          maximum: 1024
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPDatabase
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          costCenter: ${{ parameters.costCenter }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            engine: ${{ parameters.engine }}
+            version: ${{ parameters.version }}
+            storageSizeGb: ${{ parameters.storageSizeGb }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "Database provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"
+      - title: Connection Secret
+        content: "Written to `iip-outputs/${{ parameters.resourceName }}-db-creds` after provisioning"
+
+---
+# ── 5 of 6 — Network ──────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-network
+  title: "[IIP] Provision Network Segment (VNet/VPC)"
+  description: >
+    Provision a virtual network segment via IIP GitOps flow.
+    Supports Azure VNet, GCP VPC, and vSphere NSX segments.
+  tags: [infrastructure, gitops, crossplane, network, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "14"
+    ipp.dhl.com/resource-type: "XIPPNetwork"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Network Configuration
+      required: [resourceName, targetProvider, environment, cidr, ownerTeam]
+      properties:
+        resourceName:
+          title: Network Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        targetProvider:
+          title: Target Provider
+          type: string
+          enum: [azure, gcp, vsphere]
+          enumNames: ["Azure VNet", "GCP VPC", "VMware vSphere NSX"]
+          default: azure
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        cidr:
+          title: CIDR Block
+          type: string
+          default: "10.100.0.0/16"
+          ui:help: 'e.g. 10.100.0.0/16'
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPNetwork
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          costCenter: ${{ parameters.costCenter }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            cidr: ${{ parameters.cidr }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "Network provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"
+
+---
+# ── 6 of 6 — Splunk Forwarder ─────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: iip-provision-splunk-forwarder
+  title: "[IIP] Provision Splunk Universal Forwarder"
+  description: >
+    Deploy a Splunk Universal Forwarder via IIP GitOps flow.
+    IIP writes a Crossplane XIPPSplunkForwarder claim →
+    Helm release (splunk-connect-for-kubernetes) on target cluster.
+  tags: [infrastructure, gitops, crossplane, splunk, observability, iip]
+  annotations:
+    ipp.dhl.com/card-category: "IIP · GitOps"
+    ipp.dhl.com/sort-order: "15"
+    ipp.dhl.com/resource-type: "XIPPSplunkForwarder"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Splunk Forwarder Configuration
+      required: [resourceName, targetProvider, environment, splunkHecUrl, ownerTeam]
+      properties:
+        resourceName:
+          title: Forwarder Name
+          type: string
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        targetProvider:
+          title: Target Cluster
+          type: string
+          enum: [kind, azure, gcp]
+          enumNames: ["Local KIND", "Azure AKS", "GCP GKE"]
+          default: kind
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        splunkHecUrl:
+          title: Splunk HEC URL
+          type: string
+          default: "https://splunk.ipp.dhl.com:8088"
+          ui:help: 'Splunk HTTP Event Collector endpoint'
+        splunkIndex:
+          title: Splunk Index
+          type: string
+          default: ipp-platform
+        targetNamespace:
+          title: Deploy Namespace
+          type: string
+          default: splunk-forwarder
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-engineering
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+
+  steps:
+    - id: call-iip
+      name: Submit Provisioning Request to IIP
+      action: http:backstage:request
+      input:
+        method: POST
+        path: /api/proxy/iip/api/provision
+        headers:
+          Content-Type: application/json
+        body:
+          resourceType: XIPPSplunkForwarder
+          targetProvider: ${{ parameters.targetProvider }}
+          environment: ${{ parameters.environment }}
+          requestedBy: ${{ user.entity.metadata.name }}
+          businessUnit: ${{ parameters.businessUnit }}
+          entityRef: component:default/${{ parameters.resourceName }}
+          params:
+            resourceName: ${{ parameters.resourceName }}
+            splunkHecUrl: ${{ parameters.splunkHecUrl }}
+            splunkIndex: ${{ parameters.splunkIndex }}
+            targetNamespace: ${{ parameters.targetNamespace }}
+            ownerTeam: ${{ parameters.ownerTeam }}
+
+    - id: log-result
+      name: Log Provisioning ID
+      action: debug:log
+      input:
+        message: "Splunk Forwarder provisioning started. ID: ${{ steps['call-iip'].output.body.provisioningId }}"
+
+  output:
+    links:
+      - title: "View PR on GitHub"
+        url: ${{ steps['call-iip'].output.body.prUrl }}
+    text:
+      - title: Provisioning ID
+        content: "`${{ steps['call-iip'].output.body.provisioningId }}`"

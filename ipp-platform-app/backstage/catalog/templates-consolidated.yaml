@@ -1,0 +1,2058 @@
+# =============================================================================
+# IPP — Consolidated Scaffolder Templates
+# 5 strategic templates replacing 10 individual templates
+# Label domain: platform.ipp.dhl.com  |  Hostnames: *.ipp.local
+# DO NOT EDIT individual deprecated templates in templates.yaml — use this file
+# =============================================================================
+
+# ── 1 of 5 ───────────────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: day0-provision-infrastructure
+  title: Day 0 — Provision New Infrastructure
+  description: >
+    Provision new platform infrastructure on-demand. Choose from a Kubernetes
+    three-tier application, a KubeVirt virtual machine, a local KIND cluster,
+    or an Azure AKS cluster. All resources are managed by Crossplane.
+  tags:
+    - infrastructure
+    - day0
+    - self-service
+  annotations:
+    ipp.dhl.com/card-category: "Day 0 · Provision"
+    ipp.dhl.com/sort-order: "1"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    # ── Page 1: What to provision ─────────────────────────────────────────────
+    - title: What would you like to provision?
+      required: [infraType]
+      properties:
+        infraType:
+          title: Infrastructure Type
+          type: string
+          description: Select the type of infrastructure to provision
+          enum:
+            - three-tier-k8s
+            - kubevirt-vm-app
+            - kubevirt-vm-standalone
+            - kind-cluster
+            - azure-aks
+          enumNames:
+            - "Three-Tier Application (Kubernetes + Crossplane)"
+            - "KubeVirt VM — Full 3-Tier App (VM-based deployment)"
+            - "KubeVirt VM — Standalone Virtual Machine"
+            - "Kubernetes Cluster — KIND (local / ephemeral)"
+            - "Azure AKS Cluster (requires Azure credentials)"
+          ui:widget: select
+
+    # ── Page 2: Common identity fields ────────────────────────────────────────
+    - title: Resource Identity
+      required: [resourceName, namespace, environment, ownerTeam]
+      properties:
+        resourceName:
+          title: Resource Name
+          type: string
+          description: >
+            Unique name for the resource (lowercase, alphanumeric, hyphens).
+            Used as: app name (three-tier), VM name (KubeVirt), cluster name (KIND/AKS).
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. payments-api, dev-vm-01, ci-cluster, ml-aks-dev'
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          description: >
+            Target namespace (created if absent). AKS uses crossplane-system — leave default for AKS.
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          default: ipp-appbox-dev
+          ui:help: 'Never use system namespaces (kube-system, crossplane-system, argocd, backstage)'
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+          description: OpenCost / Azure cost-allocation tag
+
+    # ── Page 3: Three-Tier App config ─────────────────────────────────────────
+    - title: "Three-Tier App — Container Images & Replicas"
+      description: >
+        Complete this page when provisioning a Three-Tier Kubernetes Application.
+        Leave defaults if provisioning a VM, KIND cluster, or AKS resource.
+      properties:
+        frontendImage:
+          title: Frontend Container Image
+          type: string
+          default: 'ipp-platform/employee-frontend:latest'
+        frontendReplicas:
+          title: Frontend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+        backendImage:
+          title: Backend Container Image
+          type: string
+          default: 'ipp-platform/employee-backend:latest'
+        backendReplicas:
+          title: Backend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+        postgresVersion:
+          title: PostgreSQL Version
+          type: string
+          enum: ["14", "15", "16"]
+          default: "16"
+        databaseStorageGB:
+          title: Database Storage (GB)
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 50
+        ingressHost:
+          title: Ingress Hostname
+          type: string
+          default: 'myapp.ipp.local'
+          description: 'Add to /etc/hosts if needed'
+
+    # ── Page 4: KubeVirt VM config ────────────────────────────────────────────
+    - title: "KubeVirt VM — Sizing & Networking"
+      description: >
+        Complete this page when provisioning a KubeVirt virtual machine (with or without 3-tier app).
+        Leave defaults for Kubernetes/AKS provisioning.
+      properties:
+        cpuCores:
+          title: vCPU Cores
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 8
+        memoryMi:
+          title: Memory (MiB)
+          type: integer
+          default: 2048
+          minimum: 512
+          maximum: 8192
+        diskGi:
+          title: Root Disk (GiB) — standalone VM only
+          type: integer
+          default: 20
+          minimum: 10
+          maximum: 100
+        vmIngressHost:
+          title: Ingress Hostname — VM App
+          type: string
+          default: 'vmapp.ipp.local'
+          description: >
+            For kubevirt-vm-app only. Must be unique cluster-wide — the Nginx ingress
+            admission webhook rejects a second Ingress reusing the same host+path
+            combination. If a VM-app claim already exists (e.g. test2028 uses
+            vmapp.ipp.local), change this to something else (e.g. vmapp2.ipp.local) and
+            add it to /etc/hosts.
+
+    # ── Page 5: KIND cluster config ───────────────────────────────────────────
+    - title: "KIND Cluster — Configuration"
+      description: >
+        Complete this page when provisioning a KIND cluster.
+        Leave defaults for other infrastructure types.
+      properties:
+        kindNodeCount:
+          title: Worker Nodes
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 1
+        kindKubernetesVersion:
+          title: Kubernetes Version
+          type: string
+          enum: ['v1.31', 'v1.30', 'v1.29']
+          default: 'v1.31'
+        enableArgoCD:
+          title: Register with Argo CD
+          type: boolean
+          default: true
+        enableMonitoring:
+          title: Enable Prometheus Scraping
+          type: boolean
+          default: true
+
+    # ── Page 6: Azure AKS config ──────────────────────────────────────────────
+    - title: "Azure AKS — Region & Node Pool"
+      description: >
+        Complete this page when provisioning an Azure AKS cluster.
+        Requires azure-creds Secret in crossplane-system. Leave defaults for other types.
+      properties:
+        aksLocation:
+          title: Azure Region
+          type: string
+          enum:
+            - eastus
+            - eastus2
+            - westus2
+            - westeurope
+            - northeurope
+            - southeastasia
+          default: eastus
+        aksKubernetesVersion:
+          title: Kubernetes Version
+          type: string
+          enum: ["1.29", "1.30", "1.31"]
+          default: "1.29"
+        aksNodeCount:
+          title: Node Count
+          type: integer
+          minimum: 1
+          maximum: 3
+          default: 1
+        aksNodeVmSize:
+          title: VM Size
+          type: string
+          enum:
+            - Standard_D2s_v7
+            - Standard_D4s_v7
+            - Standard_D2ds_v7
+          default: Standard_D2s_v7
+        aksEnableArgoCD:
+          title: Register with Argo CD
+          type: boolean
+          default: true
+
+  steps:
+    - id: log-params
+      name: Log Provisioning Request
+      action: debug:log
+      input:
+        message: |
+          [Day 0 — Provision] infraType=${{ parameters.infraType }}
+          Resource: ${{ parameters.resourceName }} | Namespace: ${{ parameters.namespace }}
+          Owner: ${{ parameters.ownerTeam }} | Env: ${{ parameters.environment }}
+
+    # ── THREE-TIER-K8S ────────────────────────────────────────────────────────
+    - id: apply-three-tier-claim
+      name: "Apply ThreeTierAppClaim (Crossplane)"
+      if: ${{ parameters.infraType === 'three-tier-k8s' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: ThreeTierAppClaim
+          metadata:
+            name: ${{ parameters.resourceName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.resourceName }}
+              owner: ${{ parameters.ownerTeam }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+          spec:
+            parameters:
+              namespace: ${{ parameters.namespace }}
+              frontend:
+                image: ${{ parameters.frontendImage }}
+                replicas: ${{ parameters.frontendReplicas }}
+              backend:
+                image: ${{ parameters.backendImage }}
+                replicas: ${{ parameters.backendReplicas }}
+              database:
+                storageGB: ${{ parameters.databaseStorageGB }}
+                version: "${{ parameters.postgresVersion }}"
+              ingress:
+                host: ${{ parameters.ingressHost }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.resourceName }}-connection
+
+    # ── KUBEVIRT-VM-APP (full 3-tier on VM) ───────────────────────────────────
+    - id: apply-kubevirt-vm-app-claim
+      name: "Apply VMAppClaim — 3-Tier on VM (Crossplane)"
+      if: ${{ parameters.infraType === 'kubevirt-vm-app' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.resourceName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.resourceName }}
+              owner: ${{ parameters.ownerTeam }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+          spec:
+            parameters:
+              vmName: ${{ parameters.resourceName }}
+              namespace: ${{ parameters.namespace }}
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              ingressHost: ${{ parameters.vmIngressHost }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: vm-three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.resourceName }}-vm-connection
+
+    # ── KUBEVIRT-VM-STANDALONE ────────────────────────────────────────────────
+    - id: apply-kubevirt-standalone-claim
+      name: "Apply VMAppClaim — Standalone VM (Crossplane)"
+      if: ${{ parameters.infraType === 'kubevirt-vm-standalone' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        plural: vmappclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.resourceName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              vmName: ${{ parameters.resourceName }}
+              namespace: ${{ parameters.namespace }}
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.resourceName }}-vm-connection
+
+    # ── KIND CLUSTER ──────────────────────────────────────────────────────────
+    - id: apply-kind-cluster-claim
+      name: "Apply KindClusterClaim (Crossplane)"
+      if: ${{ parameters.infraType === 'kind-cluster' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: kindclusterclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: KindClusterClaim
+          metadata:
+            name: ${{ parameters.resourceName }}
+            namespace: crossplane-system
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+          spec:
+            parameters:
+              clusterName: ${{ parameters.resourceName }}
+              nodeCount: ${{ parameters.kindNodeCount }}
+              kubernetesVersion: ${{ parameters.kindKubernetesVersion }}
+              environment: ${{ parameters.environment }}
+              ownerTeam: ${{ parameters.ownerTeam }}
+              enableArgoCD: ${{ parameters.enableArgoCD }}
+              enableMonitoring: ${{ parameters.enableMonitoring }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.resourceName }}-kubeconfig
+
+    # ── AZURE AKS ─────────────────────────────────────────────────────────────
+    - id: apply-aks-claim
+      name: "Apply AKSClusterClaim (Crossplane → Azure)"
+      if: ${{ parameters.infraType === 'azure-aks' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: aksclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: AKSClusterClaim
+          metadata:
+            name: ${{ parameters.resourceName }}
+            namespace: crossplane-system
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/cloud: azure
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              clusterName: ${{ parameters.resourceName }}
+              location: ${{ parameters.aksLocation }}
+              kubernetesVersion: "${{ parameters.aksKubernetesVersion }}"
+              nodeCount: ${{ parameters.aksNodeCount }}
+              nodeVmSize: ${{ parameters.aksNodeVmSize }}
+              environment: ${{ parameters.environment }}
+              ownerTeam: ${{ parameters.ownerTeam }}
+              costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: aks-cluster
+            writeConnectionSecretToRef:
+              name: ${{ parameters.resourceName }}-kubeconfig
+
+  output:
+    links:
+      - title: Argo CD — watch provisioning
+        url: http://argocd.ipp.local/applications
+        icon: web
+    text:
+      - title: Provisioning initiated
+        content: |
+          **Request submitted**: `${{ parameters.resourceName }}` (`${{ parameters.infraType }}`)
+          Namespace: `${{ parameters.namespace }}` | Owner: `${{ parameters.ownerTeam }}` | Env: `${{ parameters.environment }}`
+
+          **Monitor progress:**
+          ```bash
+          # Three-Tier App
+          kubectl get threetierappclaims -n ${{ parameters.namespace }}
+          # KubeVirt VM
+          kubectl get vmappclaims -A
+          # KIND cluster
+          kubectl get kindclusterclaims -A
+          # AKS cluster (provisioning takes 8–15 min)
+          kubectl get aksclaims -A
+          ```
+          > ⚠ AKS path requires `azure-creds` Secret in `crossplane-system`. Typical provisioning time: 8–15 minutes.
+
+      - title: "Access Your Resource"
+        content: |
+          {% if parameters.infraType == "three-tier-k8s" %}
+          ## ✅ Accessing your Three-Tier Application
+
+          Once the claim shows `READY=True`, the app is live — this path runs as native
+          Kubernetes pods (no VM, no hypervisor dependency), so it works reliably on every host.
+
+          **1. Check the claim is ready:**
+          ```bash
+          kubectl get threetierappclaims -n ${{ parameters.namespace }}
+          kubectl get pods -n ${{ parameters.namespace }}
+          ```
+
+          **2. Open the app in your browser:**
+          > **http://${{ parameters.ingressHost }}**
+          (if not yet in `/etc/hosts`: `sudo sh -c 'echo "127.0.0.1 ${{ parameters.ingressHost }}" >> /etc/hosts'`)
+
+          **3. Verify each tier directly:**
+          ```bash
+          # Frontend (served at /)
+          curl -s http://${{ parameters.ingressHost }}/ | head -5
+
+          # Backend API (served at /api) — a fresh database starts empty
+          curl -s http://${{ parameters.ingressHost }}/api/employees | python3 -m json.tool
+          ```
+
+          **4. Add a demo employee record (so the UI has something to show):**
+          ```bash
+          curl -s -X POST http://${{ parameters.ingressHost }}/api/employees \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Demo User","email":"demo@acme.com","department":"Engineering","role":"Demo Engineer","start_date":"2026-01-01"}'
+
+          # Refresh the browser tab — the new record now appears in the UI
+          ```
+
+          **5. Check pod / database health:**
+          ```bash
+          kubectl get pods -n ${{ parameters.namespace }} -l app=postgres
+          kubectl logs -n ${{ parameters.namespace }} -l app=backend --tail=20
+          ```
+
+          **5. Destroy when done:**
+          > Day 2 template → `destroy-three-tier` → Crossplane deletes the namespace, frontend, backend, database, and ingress.
+          {% endif %}
+          {% if parameters.infraType == "kubevirt-vm-app" %}
+          ## 🖥️ Accessing your Full 3-Tier App (running inside the VM)
+
+          ⚠️ **Before you submit a second VM-app claim:** `vmIngressHost` must be unique
+          cluster-wide. If `test2028` or another VM-app claim already uses
+          `vmapp.ipp.local`, the Ingress creation will fail with an admission-webhook
+          collision. Pick a different hostname (e.g. `vmapp2.ipp.local`) if needed.
+
+          This VM runs the same Employee Portal app as the Kubernetes-native path, served
+          from inside the guest on port 80/8080 — once the VM boots, it's reachable the
+          same way: via the browser, **not** `virtctl console`.
+
+          **1. Check the claim is ready:**
+          ```bash
+          kubectl get vmappclaims -A
+          kubectl get virtualmachine ${{ parameters.resourceName }} -n ${{ parameters.namespace }}
+          ```
+
+          **2. Open the app in your browser (once VM-READY=True):**
+          > **http://${{ parameters.vmIngressHost }}**
+
+          **3. Verify the API directly:**
+          ```bash
+          curl -s http://${{ parameters.vmIngressHost }}/api/employees
+          ```
+
+          **4. If you need a shell inside the guest:**
+          ```bash
+          virtctl console ${{ parameters.resourceName }} -n ${{ parameters.namespace }}
+          ```
+          > **Login:** `fedora` / `DemoVM2026!` (set via cloud-init in the composition)
+
+          > ⚠ **Known limitation on Docker Desktop / macOS:** Docker Desktop does not expose
+          > `/dev/kvm` to containers, so KubeVirt runs in pure software emulation (TCG) with no
+          > hardware acceleration. On Arm64, KubeVirt's admission webhook only permits
+          > `cpu.model: host-passthrough` — but that mode requires real KVM and is rejected by
+          > the hypervisor under TCG. **The guest OS will not boot to `Running` on this platform,
+          > so the app inside it will never become reachable here.** This is a structural
+          > Docker Desktop limitation — the identical manifests work on a Linux host with
+          > `/dev/kvm` available.
+          > **For a live, working 3-tier app demo on this host, use the "Three-Tier
+          > Application (Kubernetes + Crossplane)" option instead** — the exact same app,
+          > running as native pods, no hypervisor dependency.
+          {% endif %}
+          {% if parameters.infraType == "kubevirt-vm-standalone" %}
+          ## 🖥️ Accessing your standalone VM (KubeVirt)
+
+          Once the claim shows `READY=True`, connect to your VM:
+
+          **1. Check VM is ready:**
+          ```bash
+          kubectl get vmappclaims -A
+          kubectl get virtualmachine ${{ parameters.resourceName }} -n ${{ parameters.namespace }}
+          ```
+
+          **2. Open a console session:**
+          ```bash
+          virtctl console ${{ parameters.resourceName }} -n ${{ parameters.namespace }}
+          ```
+          > **Login:** `fedora` / `DemoVM2026!` (set via cloud-init in the composition)
+
+          **3. SSH access (if virtctl SSH is configured):**
+          ```bash
+          virtctl ssh fedora@${{ parameters.resourceName }} -n ${{ parameters.namespace }}
+          ```
+
+          **4. Check VM details & IP:**
+          ```bash
+          kubectl get vmi ${{ parameters.resourceName }} -n ${{ parameters.namespace }} -o wide
+          ```
+
+          > 💡 Install `virtctl` if needed:
+          > ```bash
+          > brew install virtctl   # macOS
+          > # or: https://kubevirt.io/user-guide/operations/virtctl_client_tool/
+          > ```
+
+          > ⚠ **Known limitation on Docker Desktop / macOS:** Docker Desktop does not expose
+          > `/dev/kvm` to containers, so KubeVirt runs in pure software emulation (TCG) with no
+          > hardware acceleration. On Arm64, KubeVirt's admission webhook only permits
+          > `cpu.model: host-passthrough` — but that mode requires real KVM and is rejected by
+          > the hypervisor under TCG. **The guest OS will not boot to `Running` on this platform.**
+          > This is a structural Docker Desktop limitation, not a configuration issue — the same
+          > manifests work correctly on a Linux host with `/dev/kvm` available.
+          > For demos on this platform, show the Crossplane claim reaching `SYNCED=True,
+          > READY=True` (provisioning succeeded) rather than the live VM console.
+          {% endif %}
+          {% if parameters.infraType == "kind-cluster" %}
+          ## ☸️ Accessing your KIND Cluster
+
+          Once the claim shows `READY=True`, get the kubeconfig and connect:
+
+          **1. Check cluster is ready:**
+          ```bash
+          kubectl get kindclusterclaims -A
+          kubectl get kindclusterclaim ${{ parameters.resourceName }} -n crossplane-system
+          ```
+
+          **2. Get the kubeconfig:**
+          ```bash
+          kubectl get secret ${{ parameters.resourceName }}-kubeconfig \
+            -n crossplane-system \
+            -o jsonpath='{.data.kubeconfig}' | base64 -d \
+            > ~/.kube/${{ parameters.resourceName }}.yaml
+
+          export KUBECONFIG=~/.kube/${{ parameters.resourceName }}.yaml
+          kubectl get nodes
+          ```
+
+          **3. ClusterMesh status (if federated with the host KIND cluster):**
+          ```bash
+          cilium clustermesh status --context kind-ipp-local --namespace kube-system
+          ```
+
+          **4. Destroy when done:**
+          > Day 2 template → `destroy-kind` → Crossplane deletes the nested KIND cluster and all managed resources.
+          {% endif %}
+          {% if parameters.infraType == "azure-aks" %}
+          ## 🌐 AKS Demo App + ClusterMesh + Hubble
+
+          > ⏱ AKS provisioning takes **8–15 minutes**. Watch with: `watch kubectl get aksclusterclaim ${{ parameters.resourceName }} -n crossplane-system`
+
+          ---
+
+          ## 1 — What Crossplane provisioned (from one form)
+
+          | Resource | Type | Purpose |
+          |----------|------|---------|
+          | `rg-deployment-*` | Azure Resource Group | Container for all AKS resources |
+          | `vnet-*` | Azure Virtual Network | Private network for AKS nodes |
+          | `subnet-*` | Azure Subnet | Node subnet inside VNet |
+          | `aks-*` | AKS Kubernetes Cluster | The actual cluster |
+          | `cilium-aks-*` | Cilium 1.15 (Helm) | CNI + ClusterMesh on AKS |
+          | `hubble-peer-lb-*` | LoadBalancer Service | Hubble peer for KIND federation |
+          | `cross-cluster-ping-*` | CronJob on AKS | Live traffic generator → KIND |
+          | `ipp-sample-app` (Deployment + LB) | nginx on AKS | Demo app, publicly accessible |
+          | `hubble-ui` (Deployment + LB) | Hubble UI on AKS | Live eBPF flow map, public IP |
+
+          > 🎯 *"One form. Nine resources across Azure and Kubernetes. Zero tickets. The dependency order is in the composition, not your runbook."*
+
+          ---
+
+          ## 2 — Access the demo app on AKS
+
+          **Once READY=True, get the kubeconfig:**
+          ```bash
+          kubectl get secret ${{ parameters.resourceName }}-kubeconfig \
+            -n crossplane-system \
+            -o jsonpath='{.data.kubeconfig}' | base64 -d \
+            > ~/.kube/${{ parameters.resourceName }}.yaml
+
+          export KUBECONFIG=~/.kube/${{ parameters.resourceName }}.yaml
+          kubectl get nodes
+          ```
+
+          **Get the demo app public IP (AKS LoadBalancer):**
+          ```bash
+          kubectl get svc ipp-sample-app -n ipp-demo \
+            --kubeconfig ~/.kube/${{ parameters.resourceName }}.yaml \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+          ```
+          > 💡 **Current demo cluster**: [http://74.179.250.49](http://74.179.250.49) — shows cluster name, Cilium 1.15.4, ClusterMesh status
+
+          Then open **`http://<EXTERNAL-IP>`** in your browser — you'll see the IPP demo card showing cluster name, Cilium version, and ClusterMesh status.
+
+          **Check demo app pods:**
+          ```bash
+          kubectl get pods -n ipp-demo \
+            --kubeconfig ~/.kube/${{ parameters.resourceName }}.yaml
+          # Expected: ipp-sample-app (2 replicas), cross-cluster-ping CronJob
+          ```
+
+          ---
+
+          ## 3 — Hubble UI: live network flows on BOTH clusters
+
+          ### KIND cluster (local)
+          **Open Hubble on KIND:** [http://hubble.ipp.local](http://hubble.ipp.local)
+          - Set namespace to **`employee-portal`**
+          - Watch live flows: `ingress-nginx` → `employee-frontend` → `employee-backend` (FORWARDED, green)
+          - Policy denies appear in red — shows Cilium enforcing L4 segmentation in real time
+
+          ### AKS cluster (Azure) — Hubble UI auto-deployed by Crossplane
+          **Get the Hubble UI public IP on AKS:**
+          ```bash
+          kubectl get svc hubble-ui -n kube-system \
+            --kubeconfig ~/.kube/${{ parameters.resourceName }}.yaml \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+          ```
+          Then open **`http://<EXTERNAL-IP>`** — shows live eBPF flows in the `ipp-demo` namespace on AKS.
+
+          > 💡 **Demo talking point:** *"Cilium Hubble gives us kernel-level eBPF observability on both clusters — the KIND laptop cluster AND the real Azure AKS cluster — without a single sidecar. Same UI, same telemetry model, cloud-agnostic."*
+
+          **Verify ClusterMesh is connected:**
+          ```bash
+          # Should show: 3/3 nodes connected to aks-${{ parameters.resourceName }}
+          cilium clustermesh status --context kind-ipp-local --namespace kube-system
+          ```
+
+          ```bash
+          # AKS node should appear in KIND's node list (kvstore source = federated identity)
+          kubectl exec -n kube-system ds/cilium -c cilium-agent -- \
+            cilium-dbg node list
+          # Expected: aks-${{ parameters.resourceName }}/aks-default-* from kvstore
+          ```
+
+          **Hubble CLI (KIND side) — live flows:**
+          ```bash
+          kubectl port-forward -n kube-system svc/hubble-relay 4245:80 &
+          hubble observe --server localhost:4245 --namespace employee-portal --follow
+          ```
+
+          **Hubble CLI (AKS side) — ipp-demo namespace:**
+          ```bash
+          kubectl port-forward -n kube-system svc/hubble-relay 4245:443 \
+            --kubeconfig ~/.kube/${{ parameters.resourceName }}.yaml &
+          hubble observe --server localhost:4245 --namespace ipp-demo --follow
+          ```
+
+          **Global service annotation (demo talking point):**
+          ```bash
+          kubectl get svc ipp-sample-app -n ipp-demo \
+            --kubeconfig ~/.kube/${{ parameters.resourceName }}.yaml \
+            -o jsonpath='{.metadata.annotations}' | python3 -m json.tool
+          # Shows: service.cilium.io/global: "true"
+          # With full L3 routing, this service would be reachable from KIND pods
+          ```
+
+          ---
+
+          ## 4 — Demo talking points
+
+          **"Two clusters, one control plane."**
+          > Cilium ClusterMesh federates KIND and AKS. They share a unified identity store — workload identities, service endpoints, and network policies are synchronised in real time via etcd. Hubble shows kernel-level eBPF telemetry across both.
+
+          **Show Hubble flows live:**
+          > *"This is real network telemetry at the kernel level — eBPF probes in the kernel, zero proxy sidecar overhead. Every packet through Cilium is observed and logged with L3/L4 metadata."*
+
+          **Show ClusterMesh node federation:**
+          > *"The AKS worker node appears in KIND's Cilium node list sourced from kvstore — federated identity, not just DNS. Security policy from KIND can now reference workloads on AKS by their Cilium identity."*
+
+          **Self-service decommission:**
+          > Day 2 template → `destroy-aks` → Crossplane deletes RG, VNet, Subnet, AKS, all managed resources. Azure Portal shows nothing left.
+
+          ---
+          > ⚠️ Requires `azure-creds` Secret in `crossplane-system`. Run `make setup-azure-creds` if not present.
+          {% endif %}
+
+---
+# ── 2 of 5 ───────────────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: day2-modify-infrastructure
+  title: Day 2 — Modify Existing Infrastructure
+  description: >
+    Modify or decommission existing platform resources. Scale application replicas,
+    or destroy a Three-Tier App, KubeVirt VM, KIND cluster, or AKS cluster.
+    All operations execute via Crossplane claims — changes are reconciled automatically.
+  tags:
+    - infrastructure
+    - day2
+    - operations
+  annotations:
+    ipp.dhl.com/card-category: "Day 2 · Modify"
+    ipp.dhl.com/sort-order: "2"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    # ── Page 1: Operation selection ───────────────────────────────────────────
+    - title: What would you like to do?
+      required: [changeType]
+      properties:
+        changeType:
+          title: Operation
+          type: string
+          enum:
+            - scale
+            - destroy-three-tier
+            - destroy-vm
+            - destroy-aks
+            - destroy-kind
+          enumNames:
+            - "Scale Application — change replica count"
+            - "Destroy Three-Tier Application (irreversible)"
+            - "Destroy KubeVirt VM Application (irreversible)"
+            - "Destroy Azure AKS Cluster (irreversible)"
+            - "Destroy KIND Cluster (irreversible)"
+          ui:widget: select
+
+    # ── Page 2: Target resource ───────────────────────────────────────────────
+    - title: Target Resource
+      required: [targetName, targetNamespace]
+      properties:
+        targetName:
+          title: Resource Name
+          type: string
+          description: Name of the existing claim / resource to act on
+          ui:autofocus: true
+        targetNamespace:
+          title: Namespace
+          type: string
+          description: Namespace where the resource was created (use crossplane-system for clusters)
+          default: ipp-appbox-dev
+
+    # ── Page 3: Scale-specific fields ─────────────────────────────────────────
+    - title: "Scale — Replica Configuration"
+      description: Complete this page for the Scale operation only. Leave defaults for Destroy operations.
+      properties:
+        scaleComponent:
+          title: Component to Scale
+          type: string
+          enum: [frontend, backend]
+          default: frontend
+        scaleReplicas:
+          title: Desired Replica Count
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 2
+
+    # ── Page 4: Destroy confirmation ──────────────────────────────────────────
+    - title: Destroy Confirmation
+      description: Required for all Destroy operations. Leave blank if scaling.
+      properties:
+        confirmDestroy:
+          title: Type "destroy" to confirm
+          type: string
+          description: >
+            All managed resources will be permanently deleted by Crossplane.
+            This cannot be undone. Type the word "destroy" to proceed.
+          ui:help: 'Type exactly: destroy'
+
+  steps:
+    - id: log-operation
+      name: Log Day 2 Operation
+      action: debug:log
+      input:
+        message: |
+          [Day 2 — Modify] changeType=${{ parameters.changeType }}
+          Target: ${{ parameters.targetName }} in ${{ parameters.targetNamespace }}
+
+    # ── SCALE ─────────────────────────────────────────────────────────────────
+    - id: scale-deployment
+      name: "Scale Deployment Replicas"
+      if: ${{ parameters.changeType === 'scale' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.targetNamespace }}
+        manifest:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ parameters.targetName }}-${{ parameters.scaleComponent }}
+            namespace: ${{ parameters.targetNamespace }}
+          spec:
+            replicas: ${{ parameters.scaleReplicas }}
+
+    # ── DESTROY THREE-TIER ────────────────────────────────────────────────────
+    - id: destroy-three-tier
+      name: "Delete ThreeTierAppClaim"
+      if: ${{ parameters.changeType === 'destroy-three-tier' }}
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: ThreeTierAppClaim
+        name: ${{ parameters.targetName }}
+        namespace: ${{ parameters.targetNamespace }}
+
+    # ── DESTROY KUBEVIRT VM ───────────────────────────────────────────────────
+    - id: destroy-vm
+      name: "Delete VMAppClaim"
+      if: ${{ parameters.changeType === 'destroy-vm' }}
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: VMAppClaim
+        name: ${{ parameters.targetName }}
+        namespace: ${{ parameters.targetNamespace }}
+
+    # ── DESTROY AKS ───────────────────────────────────────────────────────────
+    - id: destroy-aks
+      name: "Delete AKSClusterClaim"
+      if: ${{ parameters.changeType === 'destroy-aks' }}
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: AKSClusterClaim
+        name: ${{ parameters.targetName }}
+        namespace: crossplane-system
+        plural: aksclaims
+
+    # ── DESTROY KIND ──────────────────────────────────────────────────────────
+    - id: destroy-kind
+      name: "Delete KindClusterClaim"
+      if: ${{ parameters.changeType === 'destroy-kind' }}
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: KindClusterClaim
+        name: ${{ parameters.targetName }}
+        namespace: crossplane-system
+        plural: kindclusterclaims
+
+  output:
+    text:
+      - title: Operation submitted
+        content: |
+          **Operation**: `${{ parameters.changeType }}` on `${{ parameters.targetName }}`  **Scale:** Monitor with:
+          ```bash
+          kubectl -n ${{ parameters.targetNamespace }} get deploy ${{ parameters.targetName }}-${{ parameters.scaleComponent }} -w
+          ```
+
+          **Destroy:** Crossplane is cascading deletion of all managed resources.
+          ```bash
+          kubectl get threetierappclaims,vmappclaims,kindclusterclaims,aksclaims -A
+          kubectl get ns ${{ parameters.targetNamespace }}
+          ```
+
+      - title: "🎯 Demo Guide — Show Destroy Progressively"
+        content: |
+          Use this script to walk your audience through each destruction stage. Each step takes ~30 seconds on screen.
+
+          ---
+
+          ### Step 1 — Set the stage (before submitting)
+          > *"The AKS cluster `aks-dev-001` was provisioned by Crossplane — it created the Resource Group, VNet, Subnet, and the cluster itself as individual managed resources. Deleting the claim triggers a cascading teardown across all of them."*
+
+          Open a terminal **before** clicking Submit and run:
+          ```bash
+          watch -n3 "kubectl get managed | grep aks-dev-001"
+          ```
+          Show the audience the full list: `rg-deployment`, `vnet`, `subnet`, `kubernetescluster` — all `SYNCED: True, READY: True`.
+
+          ---
+
+          ### Step 2 — Submit the destroy (live on screen)
+          Switch back to Backstage and click **Create**. The step log shows:
+          - `Delete AKSClusterClaim` → `Successfully deleted AKSClusterClaim/aks-dev-001`
+
+          > *"One API call. No runbooks. Crossplane's garbage collector now owns the teardown."*
+
+          ---
+
+          ### Step 3 — Watch the claim disappear
+          ```bash
+          kubectl get aksclusterclaim -A
+          ```
+          The claim row is gone within seconds. Switch to the `watch` terminal:
+          ```bash
+          kubectl get managed | grep aks-dev-001
+          ```
+          > *"Notice the resources are still there — Crossplane is calling Azure DELETE in order: cluster first, then subnet, then VNet, then Resource Group. Each row will vanish one by one."*
+
+          ---
+
+          ### Step 4 — Confirm Azure teardown (optional, 2-min wait)
+          Open [Azure Portal → Resource Groups](https://portal.azure.com/#blade/HubsExtension/BrowseResourceGroups) in another tab.
+          Show the RG `rg-aks-dev-001` — it transitions from **Deleting** to **Gone**.
+
+          > *"No orphaned resources, no forgotten subnets, no surprise bills next month."*
+
+          ---
+
+          ### Step 5 — Final state check
+          ```bash
+          # All aks-dev-001 managed resources should return empty
+          kubectl get managed | grep aks-dev-001
+
+          # Claim is fully removed
+          kubectl get aksclusterclaim aks-dev-001 -n crossplane-system
+          ```
+          Expected output: `Error from server (NotFound)` — clean slate confirmed.
+
+          ---
+
+          ### Talking points cheat-sheet
+          | Moment | What to say |
+          |--------|------------|
+          | Claim deleted | *"The claim IS the infrastructure. Delete the claim, Crossplane deletes everything it owns."* |
+          | Managed resources disappearing | *"Each row is a real Azure API call — Crossplane is sequencing the dependency graph automatically."* |
+          | Azure Portal shows Deleting | *"This is the same teardown your ops team runs manually — but it took one form field and 30 seconds."* |
+          | Empty managed list | *"Zero drift, zero orphans. The desired state is 'nothing' — and nothing is exactly what we have."* |
+
+---
+# ── 3 of 5 ───────────────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: onboard-brownfield-application
+  title: Onboard Brownfield Application
+  description: >
+    Register and onboard an existing application onto the DHL Infrastructure Platform.
+    Connect your service to platform observability, security policies, cost tracking,
+    and GitOps — without re-provisioning underlying infrastructure.
+  tags:
+    - onboarding
+    - brownfield
+    - service
+  annotations:
+    ipp.dhl.com/card-category: "Onboarding · Brownfield"
+    ipp.dhl.com/sort-order: "3"
+spec:
+  owner: platform-engineering
+  type: service
+
+  parameters:
+    # ── Page 1: Application identity ──────────────────────────────────────────
+    - title: Application Identity
+      required: [appName, team, repositoryUrl, environment]
+      properties:
+        appName:
+          title: Application Name
+          type: string
+          description: Unique slug for this application (lowercase, alphanumeric, hyphens)
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. payments-api, hr-reporting, warehouse-tracker'
+        team:
+          title: Owning Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        repositoryUrl:
+          title: Source Repository URL
+          type: string
+          description: Full HTTPS URL of the existing application repository
+          ui:help: 'e.g. https://github.com/dhl/payments-api'
+        environment:
+          title: Current Environment
+          type: string
+          enum: [development, staging, production]
+          default: production
+        description:
+          title: Application Description
+          type: string
+          description: Brief description of what this application does
+          ui:widget: textarea
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+
+    # ── Page 2: Existing infrastructure details ───────────────────────────────
+    - title: Existing Infrastructure
+      required: [infraType]
+      properties:
+        infraType:
+          title: Current Infrastructure Type
+          type: string
+          enum: [kubernetes, vm, bare-metal, cloud-managed]
+          enumNames:
+            - "Kubernetes (existing cluster/namespace)"
+            - "Virtual Machine (KubeVirt or external)"
+            - "Bare Metal"
+            - "Cloud Managed Service (RDS, EKS, AKS, etc.)"
+          default: kubernetes
+        existingNamespace:
+          title: Kubernetes Namespace (if k8s)
+          type: string
+          description: Namespace where the application is currently deployed
+          ui:help: 'Leave blank if not on Kubernetes'
+        existingCluster:
+          title: Cluster / Host Identifier
+          type: string
+          description: Cluster name, hostname, or ARN of the existing host
+          ui:help: 'e.g. prod-cluster-01, i-0abc123, arn:aws:eks:...'
+
+    # ── Page 3: Platform integration options ──────────────────────────────────
+    - title: Platform Integration
+      properties:
+        enableObservability:
+          title: Enroll in Platform Observability (Prometheus + Grafana)
+          type: boolean
+          default: true
+        enablePolicies:
+          title: Apply Platform Policies (OPA / Kyverno)
+          type: boolean
+          default: true
+        enableCostTracking:
+          title: Enable Cost Tracking (OpenCost)
+          type: boolean
+          default: true
+        enableGitOps:
+          title: Register in GitOps (Argo CD)
+          type: boolean
+          default: false
+
+    # ── Page 4: Catalog metadata ──────────────────────────────────────────────
+    - title: Catalog Registration
+      properties:
+        componentType:
+          title: Component Type
+          type: string
+          enum: [service, website, library, database, queue]
+          default: service
+        lifecycle:
+          title: Lifecycle Stage
+          type: string
+          enum: [experimental, production, deprecated]
+          default: production
+        systemName:
+          title: System Name
+          type: string
+          description: Which Backstage System does this component belong to?
+          default: employee-platform
+          ui:help: 'Must match an existing catalog system (e.g. employee-platform, ipp-platform)'
+
+  steps:
+    - id: log-brownfield-request
+      name: Log Brownfield Onboarding Request
+      action: debug:log
+      input:
+        message: |
+          [Brownfield Onboarding] app=${{ parameters.appName }}
+          Team: ${{ parameters.team }} | Env: ${{ parameters.environment }}
+          Repo: ${{ parameters.repositoryUrl }}
+          Infra: ${{ parameters.infraType }} | Namespace: ${{ parameters.existingNamespace }}
+          Observability: ${{ parameters.enableObservability }}
+          Policies:      ${{ parameters.enablePolicies }}
+          Cost Tracking: ${{ parameters.enableCostTracking }}
+          GitOps:        ${{ parameters.enableGitOps }}
+          Cost Center:   ${{ parameters.costCenter }}
+
+    - id: apply-namespace-labels
+      name: Apply Platform Labels to Namespace
+      if: ${{ parameters.infraType === 'kubernetes' and parameters.existingNamespace !== '' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.existingNamespace }}
+        manifest:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${{ parameters.existingNamespace }}
+            labels:
+              platform.ipp.dhl.com/managed: "true"
+              platform.ipp.dhl.com/team: ${{ parameters.team }}
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/onboarding-type: brownfield
+              platform.ipp.dhl.com/app: ${{ parameters.appName }}
+
+    - id: log-catalog-registration
+      name: Log Catalog Registration
+      action: debug:log
+      input:
+        message: |
+          [Catalog] Component: ${{ parameters.appName }}
+          Type: ${{ parameters.componentType }} | Lifecycle: ${{ parameters.lifecycle }}
+          System: ${{ parameters.systemName }} | Owner: ${{ parameters.team }}
+          Repository: ${{ parameters.repositoryUrl }}
+
+  output:
+    links:
+      - title: View in Catalog
+        url: http://backstage.ipp.local/catalog
+        icon: catalog
+      - title: Infra Onboarding Portal
+        url: http://backstage.ipp.local/infra-onboarding
+        icon: web
+    text:
+      - title: Next Steps — Brownfield Onboarding
+        content: |
+          **Application registered**: `${{ parameters.appName }}`
+          Team: `${{ parameters.team }}` | Environment: `${{ parameters.environment }}`
+
+          **Add `catalog-info.yaml` to your repository root (`${{ parameters.repositoryUrl }}`):**
+          ```yaml
+          apiVersion: backstage.io/v1alpha1
+          kind: Component
+          metadata:
+            name: ${{ parameters.appName }}
+            annotations:
+              backstage.io/source-location: "url:${{ parameters.repositoryUrl }}"
+              ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              ipp.dhl.com/environment: ${{ parameters.environment }}
+          spec:
+            type: ${{ parameters.componentType }}
+            lifecycle: ${{ parameters.lifecycle }}
+            owner: ${{ parameters.team }}
+            system: ${{ parameters.systemName }}
+          ```
+
+          **Platform integrations requested:**
+          - Observability: ${{ parameters.enableObservability }}
+          - Policies (OPA/Kyverno): ${{ parameters.enablePolicies }}
+          - Cost Tracking (OpenCost): ${{ parameters.enableCostTracking }}
+          - GitOps (Argo CD): ${{ parameters.enableGitOps }}
+
+          Your platform engineer will complete integration within 1 business day.
+
+---
+# ── 4 of 5 ───────────────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: onboard-greenfield-application
+  title: Onboard Greenfield Application
+  description: >
+    Bootstrap a brand-new application on the DHL Infrastructure Platform.
+    Provisions infrastructure, creates the catalog entry, configures GitOps,
+    and enrolls in platform observability and security — all in one flow.
+  tags:
+    - onboarding
+    - greenfield
+    - service
+  annotations:
+    ipp.dhl.com/card-category: "Onboarding · Greenfield"
+    ipp.dhl.com/sort-order: "4"
+spec:
+  owner: platform-engineering
+  type: service
+
+  parameters:
+    # ── Page 1: Application identity ──────────────────────────────────────────
+    - title: New Application Identity
+      required: [appName, team, repositoryUrl, environment]
+      properties:
+        appName:
+          title: Application Name
+          type: string
+          description: Unique slug (lowercase, alphanumeric, hyphens). Used as namespace and claim name.
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. finops-portal, supply-chain-api, driver-app'
+        team:
+          title: Owning Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        repositoryUrl:
+          title: Source Repository URL
+          type: string
+          description: HTTPS URL of the new application repository (can be pre-created or empty)
+          ui:help: 'e.g. https://github.com/dhl/my-new-service'
+        environment:
+          title: Starting Environment
+          type: string
+          enum: [development, staging]
+          default: development
+          description: New applications always start in development or staging
+        description:
+          title: Application Description
+          type: string
+          description: What does this application do? (used in catalog entry)
+          ui:widget: textarea
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+
+    # ── Page 2: Infrastructure choice ─────────────────────────────────────────
+    - title: Infrastructure for New Application
+      required: [infraChoice, namespace]
+      properties:
+        infraChoice:
+          title: Infrastructure Model
+          type: string
+          enum:
+            - three-tier-k8s
+            - kubevirt-vm-app
+            - kind-cluster
+            - platform-shared
+          enumNames:
+            - "Three-Tier Kubernetes App (dedicated namespace + Crossplane)"
+            - "KubeVirt VM — Full 3-Tier App on VM"
+            - "Ephemeral KIND Cluster (dev / CI use)"
+            - "Platform Shared Cluster (namespace only — no new infrastructure)"
+          default: three-tier-k8s
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          description: Namespace to create for this application
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          default: ipp-appbox-dev
+
+    # ── Page 3: Three-Tier runtime config ─────────────────────────────────────
+    - title: "Three-Tier App — Runtime Configuration"
+      description: Complete this page when choosing Three-Tier Kubernetes infrastructure.
+      properties:
+        frontendImage:
+          title: Frontend Container Image
+          type: string
+          default: 'ipp-platform/employee-frontend:latest'
+        frontendReplicas:
+          title: Frontend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+        backendImage:
+          title: Backend Container Image
+          type: string
+          default: 'ipp-platform/employee-backend:latest'
+        backendReplicas:
+          title: Backend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+        postgresVersion:
+          title: PostgreSQL Version
+          type: string
+          enum: ["14", "15", "16"]
+          default: "16"
+        databaseStorageGB:
+          title: Database Storage (GB)
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 50
+        ingressHost:
+          title: Ingress Hostname
+          type: string
+          default: 'myapp.ipp.local'
+
+    # ── Page 4: KubeVirt VM config ────────────────────────────────────────────
+    - title: "KubeVirt VM — Sizing"
+      description: Complete this page when choosing KubeVirt VM infrastructure.
+      properties:
+        cpuCores:
+          title: vCPU Cores
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 4
+        memoryMi:
+          title: Memory (MiB)
+          type: integer
+          default: 2048
+          minimum: 512
+          maximum: 4096
+        vmIngressHost:
+          title: Ingress Hostname
+          type: string
+          default: 'vmapp.ipp.local'
+
+    # ── Page 5: Platform services ─────────────────────────────────────────────
+    - title: Platform Services
+      properties:
+        enableObservability:
+          title: Enroll in Observability (Prometheus + Grafana)
+          type: boolean
+          default: true
+        enablePolicies:
+          title: Apply Platform Policies (OPA / Kyverno)
+          type: boolean
+          default: true
+        enableCostTracking:
+          title: Enable Cost Tracking (OpenCost)
+          type: boolean
+          default: true
+        enableGitOps:
+          title: Register in GitOps (Argo CD)
+          type: boolean
+          default: true
+        componentType:
+          title: Component Type
+          type: string
+          enum: [service, website, library]
+          default: service
+        systemName:
+          title: Platform System
+          type: string
+          default: employee-platform
+
+  steps:
+    - id: log-greenfield-request
+      name: Log Greenfield Onboarding Request
+      action: debug:log
+      input:
+        message: |
+          [Greenfield Onboarding] app=${{ parameters.appName }}
+          Team: ${{ parameters.team }} | Env: ${{ parameters.environment }}
+          Repo: ${{ parameters.repositoryUrl }}
+          Infra: ${{ parameters.infraChoice }} | Namespace: ${{ parameters.namespace }}
+
+    # ── THREE-TIER-K8S ────────────────────────────────────────────────────────
+    - id: provision-three-tier
+      name: "Provision Three-Tier App (Crossplane)"
+      if: ${{ parameters.infraChoice === 'three-tier-k8s' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: ThreeTierAppClaim
+          metadata:
+            name: ${{ parameters.appName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.appName }}
+              owner: ${{ parameters.team }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.team }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/onboarding-type: greenfield
+          spec:
+            parameters:
+              namespace: ${{ parameters.namespace }}
+              frontend:
+                image: ${{ parameters.frontendImage }}
+                replicas: ${{ parameters.frontendReplicas }}
+              backend:
+                image: ${{ parameters.backendImage }}
+                replicas: ${{ parameters.backendReplicas }}
+              database:
+                storageGB: ${{ parameters.databaseStorageGB }}
+                version: "${{ parameters.postgresVersion }}"
+              ingress:
+                host: ${{ parameters.ingressHost }}
+              owner:
+                team: ${{ parameters.team }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.appName }}-connection
+
+    # ── KUBEVIRT-VM-APP ───────────────────────────────────────────────────────
+    - id: provision-kubevirt-vm-app
+      name: "Provision KubeVirt VM App (Crossplane)"
+      if: ${{ parameters.infraChoice === 'kubevirt-vm-app' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.appName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.appName }}
+              owner: ${{ parameters.team }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.team }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/onboarding-type: greenfield
+          spec:
+            parameters:
+              vmName: ${{ parameters.appName }}
+              namespace: ${{ parameters.namespace }}
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              ingressHost: ${{ parameters.vmIngressHost }}
+              owner:
+                team: ${{ parameters.team }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: vm-three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.appName }}-vm-connection
+
+    # ── KIND CLUSTER ──────────────────────────────────────────────────────────
+    - id: provision-kind-cluster
+      name: "Provision KIND Cluster (Crossplane)"
+      if: ${{ parameters.infraChoice === 'kind-cluster' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: kindclusterclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: KindClusterClaim
+          metadata:
+            name: ${{ parameters.appName }}-cluster
+            namespace: crossplane-system
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.environment }}
+              platform.ipp.dhl.com/team: ${{ parameters.team }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+          spec:
+            parameters:
+              clusterName: ${{ parameters.appName }}-cluster
+              nodeCount: 1
+              kubernetesVersion: 'v1.31'
+              environment: ${{ parameters.environment }}
+              ownerTeam: ${{ parameters.team }}
+              enableArgoCD: ${{ parameters.enableGitOps }}
+              enableMonitoring: ${{ parameters.enableObservability }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.appName }}-cluster-kubeconfig
+
+    # ── PLATFORM-SHARED ───────────────────────────────────────────────────────
+    - id: log-shared-namespace
+      name: "Platform Shared — Namespace Request Logged"
+      if: ${{ parameters.infraChoice === 'platform-shared' }}
+      action: debug:log
+      input:
+        message: |
+          [Shared Platform] Namespace ${{ parameters.namespace }} requested for ${{ parameters.appName }}.
+          No new Crossplane claim — platform engineer will provision namespace and RBAC.
+          Team: ${{ parameters.team }} | Cost Center: ${{ parameters.costCenter }}
+
+    - id: log-catalog-registration
+      name: Log Catalog Registration
+      action: debug:log
+      input:
+        message: |
+          [Catalog] Component: ${{ parameters.appName }}
+          Type: ${{ parameters.componentType }} | System: ${{ parameters.systemName }}
+          Owner: ${{ parameters.team }} | Lifecycle: experimental
+
+  output:
+    links:
+      - title: Argo CD — watch provisioning
+        url: http://argocd.ipp.local/applications
+        icon: web
+      - title: View Catalog
+        url: http://backstage.ipp.local/catalog
+        icon: catalog
+    text:
+      - title: Greenfield Application Bootstrapped
+        content: |
+          **Application**: `${{ parameters.appName }}`
+          Team: `${{ parameters.team }}` | Env: `${{ parameters.environment }}`
+          Infrastructure: `${{ parameters.infraChoice }}`
+
+          **Add `catalog-info.yaml` to `${{ parameters.repositoryUrl }}`:**
+          ```yaml
+          apiVersion: backstage.io/v1alpha1
+          kind: Component
+          metadata:
+            name: ${{ parameters.appName }}
+            annotations:
+              backstage.io/source-location: "url:${{ parameters.repositoryUrl }}"
+              ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+          spec:
+            type: ${{ parameters.componentType }}
+            lifecycle: experimental
+            owner: ${{ parameters.team }}
+            system: ${{ parameters.systemName }}
+          ```
+
+          **Platform services enrolled:**
+          - Observability: ${{ parameters.enableObservability }}
+          - Policies (OPA/Kyverno): ${{ parameters.enablePolicies }}
+          - Cost Tracking (OpenCost): ${{ parameters.enableCostTracking }}
+          - GitOps (Argo CD): ${{ parameters.enableGitOps }}
+
+---
+# ── 5 of 5 ───────────────────────────────────────────────────────────────────
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: yaml-upload-bring-your-own-config
+  title: YAML Upload — Bring Your Own Config
+  description: >
+    Advanced path: paste your InfraRequest YAML and let the platform validate,
+    cost-estimate, and provision it via Crossplane. Supports the platform.demo/v1
+    InfraRequest schema. For power users and platform engineers who prefer
+    declarative configuration over form-based input.
+  tags:
+    - advanced
+    - yaml
+    - infrastructure
+    - self-service
+  annotations:
+    ipp.dhl.com/card-category: "Advanced · BYOC"
+    ipp.dhl.com/sort-order: "5"
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    # ── Page 1: Submission mode ───────────────────────────────────────────────
+    - title: How would you like to provide your config?
+      required: [submissionMode]
+      properties:
+        submissionMode:
+          title: Submission Mode
+          type: string
+          enum:
+            - paste-yaml
+            - interactive-upload
+          enumNames:
+            - "Paste YAML — enter your InfraRequest manifest below"
+            - "Interactive Upload — use the Infra Onboarding portal's drag-and-drop UI"
+          default: paste-yaml
+          ui:widget: radio
+
+    # ── Page 2: Identity ──────────────────────────────────────────────────────
+    - title: Ownership
+      required: [ownerTeam]
+      properties:
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+        targetNamespace:
+          title: Target Namespace
+          type: string
+          description: Namespace to apply the provisioned resource into
+          default: ipp-appbox-dev
+
+    # ── Page 3: YAML content ──────────────────────────────────────────────────
+    - title: YAML Configuration
+      description: >
+        Paste your InfraRequest YAML below (paste-yaml mode) or leave blank
+        (interactive-upload mode — you will be redirected to the portal).
+      properties:
+        yamlContent:
+          title: InfraRequest YAML
+          type: string
+          description: |
+            Schema: platform.demo/v1 / InfraRequest
+            Required fields: metadata.name, metadata.team, metadata.environment,
+            metadata.repository, spec.appType, spec.infra.type
+          ui:widget: textarea
+          ui:options:
+            rows: 20
+        # Structured fields extracted from YAML for Crossplane apply
+        # These mirror the InfraRequest schema and are used to build the claim
+        parsedAppName:
+          title: App Name (from YAML metadata.name)
+          type: string
+          description: >
+            Must match metadata.name in your YAML above.
+            Used to construct the Crossplane claim — keeps the apply action fully structured.
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+        parsedAppType:
+          title: App Type (from YAML spec.appType)
+          type: string
+          enum: [greenfield, brownfield]
+          default: greenfield
+        parsedInfraType:
+          title: Infra Type (from YAML spec.infra.type)
+          type: string
+          enum: [kubernetes, vm]
+          default: kubernetes
+        parsedEnvironment:
+          title: Environment (from YAML metadata.environment)
+          type: string
+          enum: [development, staging, production]
+          default: development
+        parsedNodeCount:
+          title: Node Count (from YAML spec.infra.kubernetes.nodeCount)
+          type: integer
+          default: 3
+          minimum: 1
+          maximum: 20
+        parsedNodeSize:
+          title: Node Size (from YAML spec.infra.kubernetes.nodeSize)
+          type: string
+          enum: [small, medium, large]
+          default: medium
+        parsedRegion:
+          title: Region (from YAML spec.infra.kubernetes.region)
+          type: string
+          enum: [us-east-1, eu-west-1, ap-southeast-1]
+          default: eu-west-1
+
+  steps:
+    - id: log-yaml-submission
+      name: Log YAML Submission
+      action: debug:log
+      input:
+        message: |
+          [YAML Upload — BYOC] mode=${{ parameters.submissionMode }}
+          Owner: ${{ parameters.ownerTeam }} | Cost Center: ${{ parameters.costCenter }}
+          App: ${{ parameters.parsedAppName }} | Type: ${{ parameters.parsedAppType }}
+          Infra: ${{ parameters.parsedInfraType }} | Env: ${{ parameters.parsedEnvironment }}
+
+    - id: log-raw-yaml
+      name: Record Raw YAML (audit log)
+      if: ${{ parameters.submissionMode === 'paste-yaml' }}
+      action: debug:log
+      input:
+        message: |
+          --- BEGIN SUBMITTED YAML ---
+          ${{ parameters.yamlContent }}
+          --- END SUBMITTED YAML ---
+
+    # Apply claim from structured fields (kubernetes path)
+    - id: apply-yaml-k8s-claim
+      name: "Apply KindClusterClaim from YAML config (kubernetes path)"
+      if: ${{ parameters.submissionMode === 'paste-yaml' and parameters.parsedInfraType === 'kubernetes' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: kindclusterclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: KindClusterClaim
+          metadata:
+            name: ${{ parameters.parsedAppName }}
+            namespace: crossplane-system
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.parsedEnvironment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/app-type: ${{ parameters.parsedAppType }}
+              platform.ipp.dhl.com/source: yaml-upload
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              clusterName: ${{ parameters.parsedAppName }}
+              nodeCount: ${{ parameters.parsedNodeCount }}
+              kubernetesVersion: 'v1.31'
+              environment: ${{ parameters.parsedEnvironment }}
+              ownerTeam: ${{ parameters.ownerTeam }}
+              enableArgoCD: true
+              enableMonitoring: true
+            writeConnectionSecretToRef:
+              name: ${{ parameters.parsedAppName }}-kubeconfig
+
+    # Apply claim from structured fields (vm path)
+    - id: apply-yaml-vm-claim
+      name: "Apply VMAppClaim from YAML config (vm path)"
+      if: ${{ parameters.submissionMode === 'paste-yaml' and parameters.parsedInfraType === 'vm' }}
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.targetNamespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.parsedAppName }}
+            namespace: ${{ parameters.targetNamespace }}
+            labels:
+              platform.ipp.dhl.com/environment: ${{ parameters.parsedEnvironment }}
+              platform.ipp.dhl.com/team: ${{ parameters.ownerTeam }}
+              platform.ipp.dhl.com/cost-center: ${{ parameters.costCenter }}
+              platform.ipp.dhl.com/app-type: ${{ parameters.parsedAppType }}
+              platform.ipp.dhl.com/source: yaml-upload
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              vmName: ${{ parameters.parsedAppName }}
+              namespace: ${{ parameters.targetNamespace }}
+              cpuCores: 2
+              memoryMi: 2048
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.parsedEnvironment }}
+                costCenter: ${{ parameters.costCenter }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.parsedAppName }}-vm-connection
+
+    - id: log-interactive-redirect
+      name: Redirect to Interactive Upload Portal
+      if: ${{ parameters.submissionMode === 'interactive-upload' }}
+      action: debug:log
+      input:
+        message: |
+          [YAML Upload] User chose interactive upload mode.
+          Directing to Infra Onboarding YAML Upload portal at /infra-onboarding.
+          Full parse, drag-and-drop validation, real-time cost preview available there.
+
+  output:
+    links:
+      - title: Infra Onboarding — YAML Upload Portal
+        url: http://backstage.ipp.local/infra-onboarding
+        icon: web
+      - title: Argo CD — watch provisioning
+        url: http://argocd.ipp.local/applications
+        icon: web
+    text:
+      - title: YAML Submission Result
+        content: |
+          **Mode**: `${{ parameters.submissionMode }}`
+          **Owner**: `${{ parameters.ownerTeam }}` | **Cost Center**: `${{ parameters.costCenter }}`
+
+          **paste-yaml path:** Claim submitted to Crossplane for `${{ parameters.parsedAppName }}`.
+          Monitor:
+          ```bash
+          # Kubernetes / KIND path
+          kubectl get kindclusterclaims ${{ parameters.parsedAppName }} -n crossplane-system
+          # VM path
+          kubectl get vmappclaims ${{ parameters.parsedAppName }} -n ${{ parameters.targetNamespace }}
+          ```
+
+          **interactive-upload path:** Visit the Infra Onboarding portal for drag-and-drop
+          YAML upload with real-time schema validation and cost preview:
+          [/infra-onboarding](http://backstage.ipp.local/infra-onboarding)
+
+          **YAML Schema Reference (`platform.demo/v1 / InfraRequest`):**
+          ```yaml
+          apiVersion: platform.demo/v1
+          kind: InfraRequest
+          metadata:
+            name: my-service
+            team: platform-engineering
+            environment: development
+            repository: https://github.com/dhl/my-service
+          spec:
+            appType: greenfield
+            infra:
+              type: kubernetes
+              kubernetes:
+                nodeCount: 3
+                nodeSize: medium
+                region: eu-west-1
+                highAvailability: false
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: day0-gitops-provision
+  title: GitOps Infrastructure Provisioning (IIP Service)
+  description: >
+    Provision infrastructure via GitOps — submits a Crossplane claim through
+    @ipp-automation-bot → Gitea → ArgoCD → Crossplane. Conftest-validated before commit.
+  tags:
+    - gitops
+    - crossplane
+    - infra
+    - argocd
+spec:
+  owner: platform-engineering
+  type: infrastructure
+
+  parameters:
+    - title: Claim Details
+      required:
+        - claimKind
+        - claimName
+        - targetNamespace
+        - environment
+      properties:
+        claimKind:
+          title: Claim Kind
+          type: string
+          description: Crossplane claim kind to provision
+          enum:
+            - VMAppClaim
+            - ThreeTierAppClaim
+            - KindClusterClaim
+            - AKSClusterClaim
+            - IPPVirtualMachineClaim
+            - IPPAppBoxClaim
+            - IPPClusterClaim
+            - IPPDatabaseClaim
+            - IPPNetworkClaim
+          default: VMAppClaim
+        claimName:
+          title: Claim Name
+          type: string
+          description: Unique name for this infrastructure resource (DNS-safe)
+          pattern: '^[a-z][a-z0-9-]{2,39}$'
+        targetNamespace:
+          title: Target Namespace
+          type: string
+          default: crossplane-system
+        environment:
+          title: Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        cpuCores:
+          title: CPU Cores
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 8
+        memoryMi:
+          title: Memory (MiB)
+          type: integer
+          default: 1024
+          enum: [512, 1024, 2048, 4096]
+        diskGi:
+          title: Disk (GiB)
+          type: integer
+          default: 10
+          minimum: 5
+          maximum: 100
+
+    - title: Ownership & Cost
+      required:
+        - ownerEmail
+        - costCenter
+        - businessUnit
+        - ownerTeam
+      properties:
+        ownerEmail:
+          title: Owner Email
+          type: string
+          format: email
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        ownerTeam:
+          title: Owner Team
+          type: string
+          default: platform-demo
+        requestId:
+          title: Request ID (optional)
+          type: string
+          description: ITSM ticket ID, leave blank to auto-generate
+
+  steps:
+    - id: submit-claim
+      name: Submit VM Claim via IIP Service
+      action: iip:submit-claim
+      input:
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.claimName }}
+            namespace: crossplane-system
+            labels:
+              owner: ${{ parameters.ownerTeam }}
+              environment: ${{ parameters.environment }}
+          spec:
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: vm-three-tier-app
+            parameters:
+              vmName: ${{ parameters.claimName }}
+              namespace: ipp-appbox-dev
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              diskGi: ${{ parameters.diskGi }}
+              ingressHost: vmapp.ipp.local
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.claimName }}-connection
+        requestedBy: ${{ parameters.ownerEmail }}
+        costCenter: ${{ parameters.costCenter }}
+        businessUnit: ${{ parameters.businessUnit }}
+        environment: ${{ parameters.environment }}
+        requestId: ${{ parameters.requestId }}
+
+  output:
+    links:
+      - title: Claim in Gitea
+        url: ${{ steps['submit-claim'].output.prUrl }}
+        icon: github
+      - title: ArgoCD — watch sync
+        url: http://argocd.ipp.local/applications/${{ steps['submit-claim'].output.argoCDApp }}
+        icon: web
+      - title: Gitea Repo
+        url: http://gitea.ipp.local/ipp-automation-bot/ipp-platform-claims
+        icon: web
+    text:
+      - title: Provisioning Started
+        content: |
+          **Claim**: `${{ steps['submit-claim'].output.claimName }}`
+          **Path**: `${{ steps['submit-claim'].output.claimPath }}`
+          **ArgoCD App**: `${{ steps['submit-claim'].output.argoCDApp }}`
+
+          ${{ steps['submit-claim'].output.message }}
+
+          Monitor readiness:
+          ```bash
+          kubectl get vmappclaim ${{ parameters.claimName }} -n crossplane-system -w
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: day2-destroy-gitops-claim
+  title: Day 2 — Destroy GitOps Infrastructure Claim
+  description: >
+    Delete a provisioned GitOps claim from Gitea. ArgoCD detects the deletion
+    and prunes the Crossplane resource from the cluster within ~30s.
+  tags: [infrastructure, day2, gitops, destroy]
+spec:
+  owner: platform-engineering
+  type: infrastructure
+  parameters:
+    - title: Identify the Claim to Destroy
+      required: [claimName, ownerEmail]
+      properties:
+        claimName:
+          title: Claim Name
+          type: string
+          description: Exact name used when the claim was provisioned (e.g. test2026)
+          ui:autofocus: true
+        claimKind:
+          title: Claim Kind
+          type: string
+          default: VMAppClaim
+          enum: [VMAppClaim, ThreeTierAppClaim, KindClusterClaim, AKSClusterClaim]
+          enumNames:
+            - VMAppClaim (KubeVirt VM)
+            - ThreeTierAppClaim (3-Tier App)
+            - KindClusterClaim (KIND Cluster)
+            - AKSClusterClaim (AKS Cluster)
+        businessUnit:
+          title: Business Unit
+          type: string
+          default: bu-demo
+        environment:
+          title: Environment
+          type: string
+          default: dev
+          enum: [dev, staging, prod]
+        ownerEmail:
+          title: Your Email
+          type: string
+          ui:widget: email
+        confirm:
+          title: Type "destroy" to confirm
+          type: string
+          description: >
+            This permanently deletes the claim from Gitea. Crossplane will
+            deprovision all managed resources. Type exactly: destroy
+          ui:help: 'Type exactly: destroy'
+      dependencies:
+        confirm:
+          oneOf:
+            - properties:
+                confirm:
+                  pattern: '^destroy$'
+              required: [confirm]
+
+  steps:
+    - id: destroy-claim
+      name: Delete GitOps Claim via IIP Service
+      action: iip:destroy-claim
+      input:
+        claimName:    ${{ parameters.claimName }}
+        claimKind:    ${{ parameters.claimKind }}
+        businessUnit: ${{ parameters.businessUnit }}
+        environment:  ${{ parameters.environment }}
+        requestedBy:  ${{ parameters.ownerEmail }}
+
+  output:
+    links:
+      - title: Gitea Repo
+        url: http://gitea.ipp.local/ipp-automation-bot/ipp-platform-claims
+        icon: github
+      - title: ArgoCD — watch prune
+        url: http://argocd.ipp.local/applications
+        icon: web
+    text:
+      - title: Claim Destroyed
+        content: |
+          **Claim**: `${{ steps['destroy-claim'].output.claimName }}`
+          **Deleted path**: `${{ steps['destroy-claim'].output.claimPath }}`
+
+          ${{ steps['destroy-claim'].output.message }}
+
+          Verify removal:
+          ```bash
+          kubectl get vmappclaim ${{ parameters.claimName }} -n crossplane-system
+          ```

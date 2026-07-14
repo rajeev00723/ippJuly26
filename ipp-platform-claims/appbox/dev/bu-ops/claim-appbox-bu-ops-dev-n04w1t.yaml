@@ -1,0 +1,29 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPAppBoxClaim
+metadata:
+  name: demo-appbox-03
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZKSMYB
+    iip.dhl.com/provisioning-id: 01KVZKSMYBZ3396JA6KEN04W1T
+    iip.dhl.com/requested-by: amitabh.sharan@dhl.com
+    iip.dhl.com/cost-center: CC-9002
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-ops
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T14:43:57.009Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZKSMYBZ3396JA6KEN04W1T
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    appName: demo-appbox-03
+    targetProvider: kind
+    environment: dev
+    image: nginx:1.25
+    replicaCount: 1
+    port: 80
+    targetNamespace: ipp-appbox-dev
+    ownerTeam: bu-ops
+    requestedBy: amitabh.sharan@dhl.com
+    costCenter: CC-9002

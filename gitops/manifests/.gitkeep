@@ -1,0 +1,2 @@
+# IIP writes XR claim manifests into subdirectories here.
+# Argo CD watches this path recursively for new YAML files.

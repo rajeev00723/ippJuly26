@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opencost-ingress
+  namespace: opencost
+  labels:
+    app: opencost
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: opencost.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencost
+                port:
+                  number: 9090
+    - host: opencost.dpcs.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencost
+                port:
+                  number: 9090

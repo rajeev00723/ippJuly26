@@ -1,0 +1,32 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPClusterClaim
+metadata:
+  name: test-x
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZKYGYB
+    iip.dhl.com/provisioning-id: 01KVZKYGYB8DKTW1RW5Q38G4ZY
+    iip.dhl.com/requested-by: test@dhl.com
+    iip.dhl.com/cost-center: CC-001
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-test
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T14:46:36.750Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZKYGYB8DKTW1RW5Q38G4ZY
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    clusterName: test-x
+    target: kind
+    environment: dev
+    ownerTeam: bu-test
+    nodeCount: 1
+    nodeVmSize: Standard_B2s
+    location: westeurope
+    requestedBy: test@dhl.com
+    requestId: REQ-01KVZKYGYB
+    costCenter: CC-001
+  writeConnectionSecretToRef:
+    name: test-x-kubeconfig
+    namespace: iip-outputs

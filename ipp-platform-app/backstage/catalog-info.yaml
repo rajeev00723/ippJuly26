@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: idp-demo-backstage
+  title: IPP — Infrastructure Platform Portal
+  description: Infrastructure Platform Portal powered by Backstage
+  annotations:
+    github.com/project-slug: amitabhmanish13/IPS_app_demo
+    backstage.io/techdocs-ref: dir:.
+  labels:
+    platform: idp
+    tier: platform
+spec:
+  type: website
+  lifecycle: production
+  owner: platform-engineers
+  system: idp-platform

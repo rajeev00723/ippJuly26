@@ -1,0 +1,105 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xvmapps.platform.iip.com
+  labels:
+    platform.iip.com/component: xrd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  group: platform.iip.com
+  names:
+    kind: XVMApp
+    plural: xvmapps
+  claimNames:
+    kind: VMAppClaim
+    plural: vmappclaims
+  connectionSecretKeys: []
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [parameters]
+              properties:
+                parameters:
+                  type: object
+                  required: [vmName, namespace, owner]
+                  properties:
+                    vmName:
+                      type: string
+                      description: Name for the KubeVirt VirtualMachine
+                    namespace:
+                      type: string
+                      description: Target namespace (created if absent)
+                    cpuCores:
+                      type: integer
+                      # Default lowered from 2 — this cluster runs KubeVirt under QEMU/TCG
+                      # software emulation (no /dev/kvm on Docker Desktop arm64), and larger
+                      # vCPU counts make the boot far more likely to hit the libvirt
+                      # "timed out waiting for domain to be defined" startup panic.
+                      default: 1
+                      minimum: 1
+                      maximum: 8
+                    memoryMi:
+                      type: integer
+                      default: 512
+                      minimum: 512
+                      maximum: 8192
+                    diskGi:
+                      type: integer
+                      default: 20
+                      minimum: 10
+                      maximum: 100
+                    ingressHost:
+                      type: string
+                      default: "vmapp.ipp.local"
+                    owner:
+                      type: object
+                      required: [team, environment]
+                      properties:
+                        team:
+                          type: string
+                        environment:
+                          type: string
+                          enum: [dev, staging, prod]
+                        costCenter:
+                          type: string
+                          default: demo-001
+            status:
+              type: object
+              properties:
+                vmReady:
+                  type: boolean
+                applicationURL:
+                  type: string
+                cloudType:
+                  type: string
+                  description: Private vs public cloud classification (platform.ipp.dhl.com/cloud-type)
+      additionalPrinterColumns:
+        - name: NAMESPACE
+          type: string
+          jsonPath: ".spec.parameters.namespace"
+        - name: ENV
+          type: string
+          jsonPath: ".spec.parameters.owner.environment"
+        - name: CLOUD
+          type: string
+          jsonPath: ".status.cloudType"
+        - name: VM-READY
+          type: boolean
+          jsonPath: ".status.vmReady"
+        - name: SYNCED
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Synced')].status"
+        - name: READY
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Ready')].status"
+        - name: AGE
+          type: date
+          jsonPath: ".metadata.creationTimestamp"

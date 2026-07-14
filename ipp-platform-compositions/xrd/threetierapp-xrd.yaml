@@ -1,0 +1,227 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xthreetierapp.platform.iip.com
+  labels:
+    platform.iip.com/component: xrd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  # The group and names define the API surface
+  group: platform.iip.com
+
+  names:
+    kind: XThreeTierApp
+    plural: xthreetierapp
+
+  # Claim definition - namespace-scoped view of the composite resource
+  claimNames:
+    kind: ThreeTierAppClaim
+    plural: threetierappclaims
+
+  # Connection secret keys propagated from composed resources to the claim
+  connectionSecretKeys:
+    - host
+    - port
+    - database
+    - username
+    - password
+
+  # Versions
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - parameters
+              properties:
+                parameters:
+                  type: object
+                  required:
+                    - namespace
+                    - frontend
+                    - backend
+                    - database
+                    - ingress
+                    - owner
+                  properties:
+                    # -----------------------------------------------
+                    # Target namespace for all resources
+                    # -----------------------------------------------
+                    namespace:
+                      type: string
+                      description: "Kubernetes namespace where the application will be deployed"
+                      minLength: 1
+                      maxLength: 63
+                      pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+
+                    # -----------------------------------------------
+                    # Frontend parameters
+                    # -----------------------------------------------
+                    frontend:
+                      type: object
+                      required:
+                        - image
+                      properties:
+                        image:
+                          type: string
+                          description: "Container image for the frontend (e.g. nginx:alpine)"
+                          minLength: 1
+                        replicas:
+                          type: integer
+                          description: "Number of frontend pod replicas"
+                          default: 2
+                          minimum: 1
+                          maximum: 10
+
+                    # -----------------------------------------------
+                    # Backend parameters
+                    # -----------------------------------------------
+                    backend:
+                      type: object
+                      required:
+                        - image
+                      properties:
+                        image:
+                          type: string
+                          description: "Container image for the backend API"
+                          minLength: 1
+                        replicas:
+                          type: integer
+                          description: "Number of backend pod replicas"
+                          default: 2
+                          minimum: 1
+                          maximum: 10
+
+                    # -----------------------------------------------
+                    # Database parameters
+                    # -----------------------------------------------
+                    database:
+                      type: object
+                      properties:
+                        storageGB:
+                          type: integer
+                          description: "PostgreSQL PVC size in GB"
+                          default: 10
+                          minimum: 1
+                          maximum: 500
+                        version:
+                          type: string
+                          description: "PostgreSQL major version"
+                          default: "16"
+                          enum:
+                            - "14"
+                            - "15"
+                            - "16"
+
+                    # -----------------------------------------------
+                    # Ingress parameters
+                    # -----------------------------------------------
+                    ingress:
+                      type: object
+                      required:
+                        - host
+                      properties:
+                        host:
+                          type: string
+                          description: "Hostname for the ingress rule (e.g. myapp.dpcs.local)"
+                          minLength: 1
+
+                    # -----------------------------------------------
+                    # Ownership / cost allocation metadata
+                    # -----------------------------------------------
+                    owner:
+                      type: object
+                      required:
+                        - team
+                        - costCenter
+                        - environment
+                      properties:
+                        team:
+                          type: string
+                          description: "Owning team name (used for labels and cost tracking)"
+                          minLength: 1
+                        costCenter:
+                          type: string
+                          description: "Cost center code for chargeback"
+                          minLength: 1
+                        environment:
+                          type: string
+                          description: "Deployment environment"
+                          enum:
+                            - dev
+                            - staging
+                            - prod
+
+            # ---------------------------------------------------------
+            # Status fields set by the Composition / controllers
+            # ---------------------------------------------------------
+            status:
+              type: object
+              properties:
+                frontendReady:
+                  type: string
+                  description: "true when frontend Deployment is fully available"
+                backendReady:
+                  type: string
+                  description: "true when backend Deployment is fully available"
+                databaseReady:
+                  type: string
+                  description: "true when PostgreSQL StatefulSet is ready"
+                applicationURL:
+                  type: string
+                  description: "External URL to access the application via ingress"
+                costStatus:
+                  type: string
+                  description: "Current cost tracking status reported by OpenCost"
+                securityStatus:
+                  type: string
+                  description: "Security posture status from policy engine"
+                gitopsStatus:
+                  type: string
+                  description: "GitOps sync status from ArgoCD"
+                cloudType:
+                  type: string
+                  description: "Private vs public cloud classification (platform.ipp.dhl.com/cloud-type)"
+
+      # Printer columns displayed by kubectl get threetierappclaimslist
+      additionalPrinterColumns:
+        - name: NAMESPACE
+          type: string
+          jsonPath: ".spec.parameters.namespace"
+        - name: ENVIRONMENT
+          type: string
+          jsonPath: ".spec.parameters.owner.environment"
+        - name: TEAM
+          type: string
+          jsonPath: ".spec.parameters.owner.team"
+        - name: CLOUD
+          type: string
+          jsonPath: ".status.cloudType"
+        - name: FRONTEND-READY
+          type: boolean
+          jsonPath: ".status.frontendReady"
+        - name: BACKEND-READY
+          type: boolean
+          jsonPath: ".status.backendReady"
+        - name: DB-READY
+          type: boolean
+          jsonPath: ".status.databaseReady"
+        - name: URL
+          type: string
+          jsonPath: ".status.applicationURL"
+        - name: SYNCED
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Synced')].status"
+        - name: READY
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Ready')].status"
+        - name: AGE
+          type: date
+          jsonPath: ".metadata.creationTimestamp"

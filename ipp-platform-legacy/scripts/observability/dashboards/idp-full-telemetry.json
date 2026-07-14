@@ -1,0 +1,524 @@
+{
+  "__inputs": [],
+  "annotations": { "list": [] },
+  "description": "IIP — Full Telemetry: Cluster, Workloads, GitOps, Cost, Security, API Server, AIOps",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["idp", "platform", "full-telemetry"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "title": "IIP Full Telemetry",
+  "uid": "idp-full-telemetry-v1",
+  "panels": [
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":0}, "id":100, "title":"🖥  Cluster Health", "type":"row" },
+
+    {
+      "id":1, "type":"stat", "title":"Nodes Ready",
+      "gridPos":{"h":4,"w":4,"x":0,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"red","value":0},{"color":"green","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_node_status_condition{condition=\"Ready\",status=\"true\"} == 1)","legendFormat":"Ready"}]
+    },
+    {
+      "id":2, "type":"stat", "title":"Nodes Not Ready",
+      "gridPos":{"h":4,"w":4,"x":4,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"red","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_node_status_condition{condition=\"Ready\",status=\"false\"} == 1) or vector(0)","legendFormat":"Not Ready"}]
+    },
+    {
+      "id":3, "type":"stat", "title":"Total Pods",
+      "gridPos":{"h":4,"w":4,"x":8,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_pod_info)","legendFormat":"Pods"}]
+    },
+    {
+      "id":4, "type":"stat", "title":"Running Pods %",
+      "gridPos":{"h":4,"w":4,"x":12,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"red","value":0},{"color":"yellow","value":80},{"color":"green","value":95}]},"unit":"percent"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"100 * count(kube_pod_status_phase{phase=\"Running\"} == 1) / count(kube_pod_info)","legendFormat":"Running %"}]
+    },
+    {
+      "id":5, "type":"stat", "title":"Pending Pods",
+      "gridPos":{"h":4,"w":4,"x":16,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":5}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_pod_status_phase{phase=\"Pending\"} == 1) or vector(0)","legendFormat":"Pending"}]
+    },
+    {
+      "id":6, "type":"stat", "title":"Failed Pods",
+      "gridPos":{"h":4,"w":4,"x":20,"y":1},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"red","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_pod_status_phase{phase=\"Failed\"} == 1) or vector(0)","legendFormat":"Failed"}]
+    },
+
+    {
+      "id":7, "type":"timeseries", "title":"CPU Usage by Namespace (cores)",
+      "gridPos":{"h":8,"w":12,"x":0,"y":5},
+      "fieldConfig":{"defaults":{"unit":"short","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(namespace)(rate(container_cpu_usage_seconds_total{container!=\"\",container!=\"POD\",image!=\"\"}[2m]))","legendFormat":"{{namespace}}"}]
+    },
+    {
+      "id":8, "type":"timeseries", "title":"Memory Usage by Namespace",
+      "gridPos":{"h":8,"w":12,"x":12,"y":5},
+      "fieldConfig":{"defaults":{"unit":"bytes","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(namespace)(container_memory_working_set_bytes{container!=\"\",container!=\"POD\",image!=\"\"})","legendFormat":"{{namespace}}"}]
+    },
+
+    {
+      "id":9, "type":"timeseries", "title":"Node CPU Utilisation %",
+      "gridPos":{"h":7,"w":12,"x":0,"y":13},
+      "fieldConfig":{"defaults":{"unit":"percent","min":0,"max":100,"custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"100 - (avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)","legendFormat":"{{instance}}"}]
+    },
+    {
+      "id":10, "type":"timeseries", "title":"Node Memory Utilisation %",
+      "gridPos":{"h":7,"w":12,"x":12,"y":13},
+      "fieldConfig":{"defaults":{"unit":"percent","min":0,"max":100,"custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"100 * (1 - ((node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes))","legendFormat":"{{instance}}"}]
+    },
+
+    {
+      "id":11, "type":"timeseries", "title":"Node Disk I/O (bytes/s)",
+      "gridPos":{"h":7,"w":12,"x":0,"y":20},
+      "fieldConfig":{"defaults":{"unit":"Bps","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"rate(node_disk_read_bytes_total[2m])","legendFormat":"read {{instance}}"},
+        {"datasource":"Prometheus","expr":"rate(node_disk_written_bytes_total[2m])","legendFormat":"write {{instance}}"}
+      ]
+    },
+    {
+      "id":12, "type":"timeseries", "title":"Node Network I/O (bytes/s)",
+      "gridPos":{"h":7,"w":12,"x":12,"y":20},
+      "fieldConfig":{"defaults":{"unit":"Bps","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"rate(node_network_receive_bytes_total{device!~\"lo|veth.*\"}[2m])","legendFormat":"rx {{instance}} {{device}}"},
+        {"datasource":"Prometheus","expr":"rate(node_network_transmit_bytes_total{device!~\"lo|veth.*\"}[2m])","legendFormat":"tx {{instance}} {{device}}"}
+      ]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":27}, "id":101, "title":"📦  Workloads & Deployments", "type":"row" },
+
+    {
+      "id":13, "type":"stat", "title":"Total Deployments",
+      "gridPos":{"h":4,"w":4,"x":0,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_deployment_created)","legendFormat":"Deployments"}]
+    },
+    {
+      "id":14, "type":"stat", "title":"Unavailable Replicas",
+      "gridPos":{"h":4,"w":4,"x":4,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"red","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(kube_deployment_status_replicas_unavailable) or vector(0)","legendFormat":"Unavailable"}]
+    },
+    {
+      "id":15, "type":"stat", "title":"Pod Restarts (5m)",
+      "gridPos":{"h":4,"w":4,"x":8,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":5}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(kube_pod_container_status_restarts_total[5m])) or vector(0)","legendFormat":"Restarts"}]
+    },
+    {
+      "id":16, "type":"stat", "title":"OOM Events (1h)",
+      "gridPos":{"h":4,"w":4,"x":12,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"red","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(container_oom_events_total[1h])) or vector(0)","legendFormat":"OOM"}]
+    },
+    {
+      "id":17, "type":"stat", "title":"CPU Throttled %",
+      "gridPos":{"h":4,"w":4,"x":16,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":25},{"color":"red","value":50}]},"unit":"percent"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"100 * sum(rate(container_cpu_cfs_throttled_periods_total{container!=\"\",image!=\"\"}[5m])) / sum(rate(container_cpu_cfs_periods_total{container!=\"\",image!=\"\"}[5m]))","legendFormat":"Throttled %"}]
+    },
+    {
+      "id":18, "type":"stat", "title":"DaemonSets Ready",
+      "gridPos":{"h":4,"w":4,"x":20,"y":28},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_daemonset_status_number_ready == kube_daemonset_status_desired_number_scheduled)","legendFormat":"Healthy"}]
+    },
+
+    {
+      "id":19, "type":"table", "title":"Top Pod CPU Consumers",
+      "gridPos":{"h":9,"w":12,"x":0,"y":32},
+      "fieldConfig":{"defaults":{"unit":"short"},"overrides":[{"matcher":{"id":"byName","options":"CPU (cores)"},"properties":[{"id":"unit","value":"short"},{"id":"custom.displayMode","value":"color-background"}]}]},
+      "options":{"sortBy":[{"displayName":"CPU (cores)","desc":true}],"footer":{"show":false}},
+      "transformations":[{"id":"sortBy","options":{"fields":[{"displayName":"CPU (cores)","desc":true}]}}],
+      "targets":[{"datasource":"Prometheus","expr":"topk(10, sum by(pod,namespace)(rate(container_cpu_usage_seconds_total{container!=\"\",image!=\"\"}[2m])))","legendFormat":"{{namespace}}/{{pod}}","instant":true,"format":"table"}]
+    },
+    {
+      "id":20, "type":"table", "title":"Top Pod Memory Consumers",
+      "gridPos":{"h":9,"w":12,"x":12,"y":32},
+      "fieldConfig":{"defaults":{"unit":"bytes"},"overrides":[{"matcher":{"id":"byName","options":"Memory"},"properties":[{"id":"custom.displayMode","value":"color-background"}]}]},
+      "options":{"sortBy":[{"displayName":"Memory","desc":true}]},
+      "targets":[{"datasource":"Prometheus","expr":"topk(10, sum by(pod,namespace)(container_memory_working_set_bytes{container!=\"\",image!=\"\"}))","legendFormat":"{{namespace}}/{{pod}}","instant":true,"format":"table"}]
+    },
+
+    {
+      "id":21, "type":"timeseries", "title":"Pod Restarts per Namespace",
+      "gridPos":{"h":7,"w":24,"x":0,"y":41},
+      "fieldConfig":{"defaults":{"unit":"short","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(namespace)(increase(kube_pod_container_status_restarts_total[10m]))","legendFormat":"{{namespace}}"}]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":48}, "id":102, "title":"🚀  GitOps — Argo CD", "type":"row" },
+
+    {
+      "id":22, "type":"stat", "title":"ArgoCD Git Requests (5m)",
+      "gridPos":{"h":4,"w":6,"x":0,"y":49},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(argocd_git_request_total[5m])) or vector(0)","legendFormat":"Git Requests"}]
+    },
+    {
+      "id":23, "type":"stat", "title":"ArgoCD Redis Requests (5m)",
+      "gridPos":{"h":4,"w":6,"x":6,"y":49},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"purple"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(argocd_redis_request_total[5m])) or vector(0)","legendFormat":"Redis Requests"}]
+    },
+    {
+      "id":24, "type":"stat", "title":"ArgoCD Git P99 Latency",
+      "gridPos":{"h":4,"w":6,"x":12,"y":49},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":2},{"color":"red","value":5}]},"unit":"s"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(argocd_git_request_duration_seconds_bucket[5m])))","legendFormat":"p99"}]
+    },
+    {
+      "id":25, "type":"stat", "title":"ArgoCD Redis P99 Latency",
+      "gridPos":{"h":4,"w":6,"x":18,"y":49},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":0.1},{"color":"red","value":0.5}]},"unit":"s"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(argocd_redis_request_duration_seconds_bucket[5m])))","legendFormat":"p99"}]
+    },
+
+    {
+      "id":26, "type":"timeseries", "title":"ArgoCD Git Request Rate",
+      "gridPos":{"h":8,"w":12,"x":0,"y":53},
+      "fieldConfig":{"defaults":{"unit":"reqps","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(request_type)(rate(argocd_git_request_total[2m]))","legendFormat":"{{request_type}}"}]
+    },
+    {
+      "id":27, "type":"timeseries", "title":"ArgoCD Git Latency Percentiles",
+      "gridPos":{"h":8,"w":12,"x":12,"y":53},
+      "fieldConfig":{"defaults":{"unit":"s","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.50, sum by(le)(rate(argocd_git_request_duration_seconds_bucket[5m])))","legendFormat":"p50"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.95, sum by(le)(rate(argocd_git_request_duration_seconds_bucket[5m])))","legendFormat":"p95"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(argocd_git_request_duration_seconds_bucket[5m])))","legendFormat":"p99"}
+      ]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":61}, "id":103, "title":"💰  Cost (OpenCost)", "type":"row" },
+
+    {
+      "id":28, "type":"stat", "title":"CPU Cost / Hour (total nodes)",
+      "gridPos":{"h":4,"w":6,"x":0,"y":62},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"orange"},"unit":"currencyUSD","decimals":4}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(node_cpu_hourly_cost)","legendFormat":"$/hr"}]
+    },
+    {
+      "id":29, "type":"stat", "title":"RAM Cost / Hour (total nodes)",
+      "gridPos":{"h":4,"w":6,"x":6,"y":62},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"cyan"},"unit":"currencyUSD","decimals":4}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(node_ram_hourly_cost)","legendFormat":"$/hr"}]
+    },
+    {
+      "id":30, "type":"stat", "title":"CPU Requested (cores)",
+      "gridPos":{"h":4,"w":6,"x":12,"y":62},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"green"},"unit":"short","decimals":2}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(kube_pod_container_resource_requests{resource=\"cpu\",container!=\"\"})","legendFormat":"CPU req"}]
+    },
+    {
+      "id":31, "type":"stat", "title":"Memory Requested",
+      "gridPos":{"h":4,"w":6,"x":18,"y":62},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"bytes"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(kube_pod_container_resource_requests{resource=\"memory\",container!=\"\"})","legendFormat":"Mem req"}]
+    },
+
+    {
+      "id":32, "type":"timeseries", "title":"CPU Hourly Cost per Node",
+      "gridPos":{"h":8,"w":12,"x":0,"y":66},
+      "fieldConfig":{"defaults":{"unit":"currencyUSD","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"node_cpu_hourly_cost","legendFormat":"{{node}}"}]
+    },
+    {
+      "id":33, "type":"timeseries", "title":"Container CPU Allocation (cores) by Namespace",
+      "gridPos":{"h":8,"w":12,"x":12,"y":66},
+      "fieldConfig":{"defaults":{"unit":"short","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(namespace)(container_cpu_allocation{container!=\"\"})","legendFormat":"{{namespace}}"}]
+    },
+
+    {
+      "id":34, "type":"timeseries", "title":"Container Memory Allocation by Namespace",
+      "gridPos":{"h":8,"w":12,"x":0,"y":74},
+      "fieldConfig":{"defaults":{"unit":"bytes","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(namespace)(container_memory_allocation_bytes{container!=\"\"})","legendFormat":"{{namespace}}"}]
+    },
+    {
+      "id":35, "type":"timeseries", "title":"CPU Request vs Actual Usage (cluster-wide)",
+      "gridPos":{"h":8,"w":12,"x":12,"y":74},
+      "fieldConfig":{"defaults":{"unit":"short","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"sum(kube_pod_container_resource_requests{resource=\"cpu\",container!=\"\"})","legendFormat":"Requested"},
+        {"datasource":"Prometheus","expr":"sum(rate(container_cpu_usage_seconds_total{container!=\"\",image!=\"\"}[2m]))","legendFormat":"Actual Usage"}
+      ]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":82}, "id":104, "title":"🌐  Kubernetes API Server", "type":"row" },
+
+    {
+      "id":36, "type":"stat", "title":"API Request Rate (rps)",
+      "gridPos":{"h":4,"w":6,"x":0,"y":83},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"reqps","decimals":1}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(rate(apiserver_request_total[2m]))","legendFormat":"rps"}]
+    },
+    {
+      "id":37, "type":"stat", "title":"API Error Rate %",
+      "gridPos":{"h":4,"w":6,"x":6,"y":83},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":5}]},"unit":"percent"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"100 * sum(rate(apiserver_request_total{code=~\"5..\"}[2m])) / sum(rate(apiserver_request_total[2m]))","legendFormat":"Error %"}]
+    },
+    {
+      "id":38, "type":"stat", "title":"In-Flight Requests",
+      "gridPos":{"h":4,"w":6,"x":12,"y":83},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":50},{"color":"red","value":200}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(apiserver_current_inflight_requests)","legendFormat":"In-Flight"}]
+    },
+    {
+      "id":39, "type":"stat", "title":"Admission Webhook P99 (s)",
+      "gridPos":{"h":4,"w":6,"x":18,"y":83},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":0.5},{"color":"red","value":2}]},"unit":"s"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(apiserver_admission_webhook_admission_duration_seconds_bucket[5m])))","legendFormat":"p99"}]
+    },
+
+    {
+      "id":40, "type":"timeseries", "title":"API Server Request Rate by Verb",
+      "gridPos":{"h":8,"w":12,"x":0,"y":87},
+      "fieldConfig":{"defaults":{"unit":"reqps","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"table","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(verb)(rate(apiserver_request_total[2m]))","legendFormat":"{{verb}}"}]
+    },
+    {
+      "id":41, "type":"timeseries", "title":"API Server Latency Percentiles",
+      "gridPos":{"h":8,"w":12,"x":12,"y":87},
+      "fieldConfig":{"defaults":{"unit":"s","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.50, sum by(le)(rate(apiserver_request_duration_seconds_bucket{verb!=\"WATCH\"}[5m])))","legendFormat":"p50"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.95, sum by(le)(rate(apiserver_request_duration_seconds_bucket{verb!=\"WATCH\"}[5m])))","legendFormat":"p95"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(apiserver_request_duration_seconds_bucket{verb!=\"WATCH\"}[5m])))","legendFormat":"p99"}
+      ]
+    },
+    {
+      "id":42, "type":"timeseries", "title":"API Server Errors by Code",
+      "gridPos":{"h":7,"w":24,"x":0,"y":95},
+      "fieldConfig":{"defaults":{"unit":"reqps","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(code)(rate(apiserver_request_total{code!~\"2..\"}[2m]))","legendFormat":"HTTP {{code}}"}]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":102}, "id":105, "title":"🛡  Security & Policy (Kyverno / RBAC)", "type":"row" },
+
+    {
+      "id":43, "type":"stat", "title":"Admission Webhooks",
+      "gridPos":{"h":4,"w":6,"x":0,"y":103},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"count(kube_mutatingwebhookconfiguration_info) + count(kube_validatingwebhookconfiguration_info)","legendFormat":"Webhooks"}]
+    },
+    {
+      "id":44, "type":"stat", "title":"Webhook Admission Requests (5m)",
+      "gridPos":{"h":4,"w":6,"x":6,"y":103},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"purple"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(apiserver_admission_webhook_request_total[5m])) or vector(0)","legendFormat":"Requests"}]
+    },
+    {
+      "id":45, "type":"stat", "title":"Webhook Rejection Rate %",
+      "gridPos":{"h":4,"w":6,"x":12,"y":103},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":10}]},"unit":"percent"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"100 * sum(rate(apiserver_admission_webhook_request_total{rejected=\"true\"}[5m])) / (sum(rate(apiserver_admission_webhook_request_total[5m])) > 0) or vector(0)","legendFormat":"Rejected %"}]
+    },
+    {
+      "id":46, "type":"stat", "title":"RBAC Auth Decisions (5m)",
+      "gridPos":{"h":4,"w":6,"x":18,"y":103},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"green"},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(increase(apiserver_authorization_decisions_total[5m])) or vector(0)","legendFormat":"Decisions"}]
+    },
+
+    {
+      "id":47, "type":"timeseries", "title":"Admission Webhook Latency (p50/p95/p99)",
+      "gridPos":{"h":8,"w":12,"x":0,"y":107},
+      "fieldConfig":{"defaults":{"unit":"s","custom":{"lineWidth":2,"fillOpacity":5}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.50, sum by(le)(rate(apiserver_admission_webhook_admission_duration_seconds_bucket[5m])))","legendFormat":"p50"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.95, sum by(le)(rate(apiserver_admission_webhook_admission_duration_seconds_bucket[5m])))","legendFormat":"p95"},
+        {"datasource":"Prometheus","expr":"histogram_quantile(0.99, sum by(le)(rate(apiserver_admission_webhook_admission_duration_seconds_bucket[5m])))","legendFormat":"p99"}
+      ]
+    },
+    {
+      "id":48, "type":"timeseries", "title":"RBAC Authorization Decisions by Decision",
+      "gridPos":{"h":8,"w":12,"x":12,"y":107},
+      "fieldConfig":{"defaults":{"unit":"reqps","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"sum by(decision)(rate(apiserver_authorization_decisions_total[2m]))","legendFormat":"{{decision}}"}]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":115}, "id":106, "title":"🤖  AIOps Engine", "type":"row" },
+
+    {
+      "id":49, "type":"stat", "title":"AIOps Engine Up",
+      "gridPos":{"h":4,"w":4,"x":0,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"red","value":0},{"color":"green","value":1}]},"mappings":[{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}],"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"up{job=~\".*aiops.*\"} or vector(0)","legendFormat":"AIOps"}]
+    },
+    {
+      "id":50, "type":"stat", "title":"AIOps Pod CPU (cores)",
+      "gridPos":{"h":4,"w":4,"x":4,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"orange"},"unit":"short","decimals":3}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(rate(container_cpu_usage_seconds_total{namespace=\"aiops\",container!=\"\",image!=\"\"}[2m]))","legendFormat":"CPU"}]
+    },
+    {
+      "id":51, "type":"stat", "title":"AIOps Pod Memory",
+      "gridPos":{"h":4,"w":4,"x":8,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"cyan"},"unit":"bytes"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(container_memory_working_set_bytes{namespace=\"aiops\",container!=\"\",image!=\"\"})","legendFormat":"Memory"}]
+    },
+    {
+      "id":52, "type":"stat", "title":"AIOps Pod Restarts",
+      "gridPos":{"h":4,"w":4,"x":12,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":3}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(kube_pod_container_status_restarts_total{namespace=\"aiops\"}) or vector(0)","legendFormat":"Restarts"}]
+    },
+    {
+      "id":53, "type":"stat", "title":"AIOps Network Rx (bytes/s)",
+      "gridPos":{"h":4,"w":4,"x":16,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"blue"},"unit":"Bps"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(rate(container_network_receive_bytes_total{namespace=\"aiops\"}[2m]))","legendFormat":"Rx"}]
+    },
+    {
+      "id":54, "type":"stat", "title":"AIOps Network Tx (bytes/s)",
+      "gridPos":{"h":4,"w":4,"x":20,"y":116},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"purple"},"unit":"Bps"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"sum(rate(container_network_transmit_bytes_total{namespace=\"aiops\"}[2m]))","legendFormat":"Tx"}]
+    },
+
+    {
+      "id":55, "type":"timeseries", "title":"AIOps Engine CPU & Memory Over Time",
+      "gridPos":{"h":8,"w":12,"x":0,"y":120},
+      "fieldConfig":{"defaults":{"custom":{"lineWidth":2,"fillOpacity":10}},"overrides":[{"matcher":{"id":"byName","options":"CPU (cores)"},"properties":[{"id":"unit","value":"short"}]},{"matcher":{"id":"byName","options":"Memory (bytes)"},"properties":[{"id":"unit","value":"bytes"}]}]},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"sum(rate(container_cpu_usage_seconds_total{namespace=\"aiops\",container!=\"\",image!=\"\"}[2m]))","legendFormat":"CPU (cores)"},
+        {"datasource":"Prometheus","expr":"sum(container_memory_working_set_bytes{namespace=\"aiops\",container!=\"\",image!=\"\"})","legendFormat":"Memory (bytes)"}
+      ]
+    },
+    {
+      "id":56, "type":"timeseries", "title":"AIOps Engine Network I/O",
+      "gridPos":{"h":8,"w":12,"x":12,"y":120},
+      "fieldConfig":{"defaults":{"unit":"Bps","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"multi"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[
+        {"datasource":"Prometheus","expr":"sum(rate(container_network_receive_bytes_total{namespace=\"aiops\"}[2m]))","legendFormat":"Receive"},
+        {"datasource":"Prometheus","expr":"sum(rate(container_network_transmit_bytes_total{namespace=\"aiops\"}[2m]))","legendFormat":"Transmit"}
+      ]
+    },
+
+    { "collapsed": false, "gridPos": {"h":1,"w":24,"x":0,"y":128}, "id":107, "title":"📡  Scrape Health & Prometheus", "type":"row" },
+
+    {
+      "id":57, "type":"stat", "title":"Scrape Targets Up",
+      "gridPos":{"h":4,"w":6,"x":0,"y":129},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"red","value":0},{"color":"green","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(up == 1)","legendFormat":"Up"}]
+    },
+    {
+      "id":58, "type":"stat", "title":"Scrape Targets Down",
+      "gridPos":{"h":4,"w":6,"x":6,"y":129},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"red","value":1}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(up == 0) or vector(0)","legendFormat":"Down"}]
+    },
+    {
+      "id":59, "type":"stat", "title":"Active Alerts",
+      "gridPos":{"h":4,"w":6,"x":12,"y":129},
+      "fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":0},{"color":"yellow","value":1},{"color":"red","value":5}]},"unit":"short"}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"background"},
+      "targets":[{"datasource":"Prometheus","expr":"count(ALERTS{alertstate=\"firing\"}) or vector(0)","legendFormat":"Firing"}]
+    },
+    {
+      "id":60, "type":"stat", "title":"Prometheus TSDB Samples Ingested (rate)",
+      "gridPos":{"h":4,"w":6,"x":18,"y":129},
+      "fieldConfig":{"defaults":{"color":{"mode":"fixed","fixedColor":"green"},"unit":"short","decimals":0}},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"]},"textMode":"auto","colorMode":"value"},
+      "targets":[{"datasource":"Prometheus","expr":"rate(prometheus_tsdb_head_samples_appended_total[2m])","legendFormat":"samples/s"}]
+    },
+
+    {
+      "id":61, "type":"table", "title":"Scrape Targets Status",
+      "gridPos":{"h":8,"w":24,"x":0,"y":133},
+      "fieldConfig":{"defaults":{},"overrides":[{"matcher":{"id":"byName","options":"Value"},"properties":[{"id":"mappings","value":[{"type":"value","options":{"0":{"text":"DOWN","color":"red","index":0},"1":{"text":"UP","color":"green","index":1}}}]},{"id":"custom.displayMode","value":"color-background"}]}]},
+      "options":{"sortBy":[{"displayName":"Value","desc":false}],"footer":{"show":false}},
+      "targets":[{"datasource":"Prometheus","expr":"up","legendFormat":"{{job}} — {{instance}}","instant":true,"format":"table"}]
+    },
+
+    {
+      "id":62, "type":"timeseries", "title":"Prometheus Samples Ingested / sec",
+      "gridPos":{"h":7,"w":12,"x":0,"y":141},
+      "fieldConfig":{"defaults":{"unit":"short","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"single"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"rate(prometheus_tsdb_head_samples_appended_total[2m])","legendFormat":"samples/s"}]
+    },
+    {
+      "id":63, "type":"timeseries", "title":"Prometheus Memory Usage",
+      "gridPos":{"h":7,"w":12,"x":12,"y":141},
+      "fieldConfig":{"defaults":{"unit":"bytes","custom":{"lineWidth":2,"fillOpacity":10}}},
+      "options":{"tooltip":{"mode":"single"},"legend":{"displayMode":"list","placement":"bottom"}},
+      "targets":[{"datasource":"Prometheus","expr":"process_resident_memory_bytes{job=~\".*prometheus.*\"}","legendFormat":"{{job}}"}]
+    }
+
+  ]
+}

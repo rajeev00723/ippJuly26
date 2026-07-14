@@ -1,0 +1,508 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: vmapp-kubevirt
+  labels:
+    platform.iip.com/composition: vm-three-tier-app
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.iip.com/v1alpha1
+    kind: XVMApp
+
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          # ===========================================================
+          # 1. Namespace
+          # ===========================================================
+          - name: vm-namespace
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                deletionPolicy: Orphan
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Namespace
+                    metadata:
+                      name: ""
+                      labels:
+                        platform.iip.com/managed: "true"
+                        platform.iip.com/team: ""
+                        platform.iip.com/environment: ""
+                        platform.ipp.dhl.com/cloud-type: private
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-vm-ns"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.owner.team
+                toFieldPath: spec.forProvider.manifest.metadata.labels["platform.iip.com/team"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.owner.environment
+                toFieldPath: spec.forProvider.manifest.metadata.labels["platform.iip.com/environment"]
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 2. Cloud-init Secret
+          # ===========================================================
+          - name: vm-cloudinit-secret
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Secret
+                    metadata:
+                      name: ""
+                      namespace: ""
+                    type: Opaque
+                    stringData:
+                      userdata: |
+                        #cloud-config
+                        users:
+                          - name: fedora
+                            sudo: ALL=(ALL) NOPASSWD:ALL
+                            groups: wheel
+                            lock_passwd: false
+                        # Demo login: fedora / DemoVM2026!
+                        chpasswd:
+                          list: |
+                            fedora:DemoVM2026!
+                          expire: false
+                        ssh_pwauth: true
+                        bootcmd:
+                          - ip link set eth0 up || true
+                          - ip addr add 10.0.2.2/24 dev eth0 || true
+                          - ip route add default via 10.0.2.1 || true
+                          - echo nameserver 8.8.8.8 > /etc/resolv.conf
+                        write_files:
+                          - path: /etc/systemd/network/10-eth0.network
+                            content: |
+                              [Match]
+                              Name=eth0
+                              [Network]
+                              Address=10.0.2.2/24
+                              Gateway=10.0.2.1
+                              DNS=8.8.8.8
+                          - path: /opt/employee-app/app.py
+                            permissions: '0755'
+                            content: |
+                              #!/usr/bin/env python3
+                              import json, os, threading
+                              from http.server import HTTPServer, BaseHTTPRequestHandler
+                              EMPLOYEES = [
+                                {"id":1,"name":"Alice Chen","email":"alice@demo.local","department":"Engineering","role":"Senior Engineer"},
+                                {"id":2,"name":"Bob Smith","email":"bob@demo.local","department":"Product","role":"Product Manager"},
+                              ]
+                              HTML = open('/var/www/html/index.html','rb').read() if os.path.exists('/var/www/html/index.html') else b'<h1>Employee Portal</h1>'
+                              class H(BaseHTTPRequestHandler):
+                                def log_message(self, fmt, *a): pass
+                                def do_GET(self):
+                                  p = self.path.rstrip('/')
+                                  if p == '/api/employees' or p == '/api':
+                                    b = json.dumps(EMPLOYEES).encode()
+                                    self.send_response(200)
+                                    self.send_header('Content-Type','application/json')
+                                    self.send_header('Access-Control-Allow-Origin','*')
+                                    self.send_header('Content-Length',len(b))
+                                    self.end_headers(); self.wfile.write(b)
+                                  elif p == '/health':
+                                    b = b'{"status":"ok","target":"vm"}'
+                                    self.send_response(200)
+                                    self.send_header('Content-Type','application/json')
+                                    self.send_header('Content-Length',len(b))
+                                    self.end_headers(); self.wfile.write(b)
+                                  elif p == '' or p == '/':
+                                    self.send_response(200)
+                                    self.send_header('Content-Type','text/html')
+                                    self.send_header('Content-Length',len(HTML))
+                                    self.end_headers(); self.wfile.write(HTML)
+                                  else:
+                                    self.send_response(404); self.end_headers()
+                              def serve(port):
+                                HTTPServer(('0.0.0.0', port), H).serve_forever()
+                              t = threading.Thread(target=serve, args=(8080,), daemon=True)
+                              t.start()
+                              serve(80)
+                          - path: /var/www/html/index.html
+                            content: |
+                              <!DOCTYPE html><html><head><title>Employee Portal — VM</title></head>
+                              <body style="font-family:sans-serif;background:#f5f5f5;padding:40px">
+                              <h1 style="color:#1565c0">Employee Portal <span style="background:#43a047;color:#fff;font-size:.7em;padding:2px 8px;border-radius:12px">KubeVirt VM</span></h1>
+                              <p>Provisioned by Crossplane · Running on KubeVirt</p>
+                              <div id="data"></div>
+                              <script>
+                              fetch('/api/employees').then(r=>r.json()).then(d=>{
+                                document.getElementById('data').innerHTML='<table border=1 cellpadding=8>'+
+                                ['<tr><th>ID</th><th>Name</th><th>Email</th><th>Dept</th><th>Role</th></tr>'].concat(
+                                d.map(e=>`<tr><td>${e.id}</td><td>${e.name}</td><td>${e.email}</td><td>${e.department}</td><td>${e.role}</td></tr>`)
+                                ).join('')+'</table>';
+                              });
+                              </script></body></html>
+                          - path: /etc/systemd/system/employee-app.service
+                            content: |
+                              [Unit]
+                              Description=Employee App (API port 8080 + HTML port 80)
+                              After=network.target
+                              [Service]
+                              Type=simple
+                              ExecStart=/usr/bin/python3 /opt/employee-app/app.py
+                              Restart=always
+                              RestartSec=5
+                              [Install]
+                              WantedBy=multi-user.target
+                        runcmd:
+                          - systemctl enable --now systemd-networkd
+                          - dnf install -y openssh-server
+                          - systemctl enable --now sshd
+                          - systemctl daemon-reload
+                          - systemctl enable --now employee-app
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-cloudinit"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-cloudinit"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 3. KubeVirt VirtualMachine
+          # ===========================================================
+          - name: kubevirt-vm
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: kubevirt.io/v1
+                    kind: VirtualMachine
+                    metadata:
+                      name: ""
+                      namespace: ""
+                      labels:
+                        app: ""
+                        platform.iip.com/managed: "true"
+                        platform.ipp.dhl.com/cloud-type: private
+                    spec:
+                      running: true
+                      template:
+                        metadata:
+                          labels:
+                            kubevirt.io/domain: ""
+                            app: ""
+                        spec:
+                          domain:
+                            cpu:
+                              cores: 2
+                              # host-passthrough is the only CPU model KubeVirt's admission
+                              # webhook allows on Arm64 (enforced as of the v1.8.4 upgrade —
+                              # see Makefile/bootstrap.sh KUBEVIRT_VERSION). The older v1.3.1
+                              # image had a different crash here ("unknown CPU feature: mpx"),
+                              # which the version upgrade fixed — but host-passthrough itself
+                              # still requires real KVM. On Apple Silicon (no /dev/kvm under
+                              # Docker Desktop, useEmulation:true/TCG only) the VMI stays
+                              # stuck in Scheduled/Starting and status.vmReady is always false.
+                              # This is a hardware limitation, not fixable via composition
+                              # config — see README.md "Known Limitations". Real vmReady:true
+                              # needs a host with actual KVM (Linux, or a cloud cluster).
+                              model: host-passthrough
+                            memory:
+                              guest: "2048Mi"
+                            devices:
+                              disks:
+                                - name: containerdisk
+                                  disk:
+                                    bus: virtio
+                                - name: cloudinit
+                                  disk:
+                                    bus: virtio
+                              interfaces:
+                                - name: default
+                                  masquerade: {}
+                                  ports:
+                                    - port: 80
+                                      name: http
+                                    - port: 8080
+                                      name: api
+                          networks:
+                            - name: default
+                              pod: {}
+                          volumes:
+                            - name: containerdisk
+                              containerDisk:
+                                image: quay.io/containerdisks/fedora:40
+                            - name: cloudinit
+                              cloudInitNoCloud:
+                                secretRef:
+                                  name: ""
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-vm"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.labels.app
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.template.metadata.labels["kubevirt.io/domain"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.template.metadata.labels.app
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.cpuCores
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.domain.cpu.cores
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.memoryMi
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.domain.memory.guest
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%.0fMi"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.volumes[1].cloudInitNoCloud.secretRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-cloudinit"
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.printableStatus
+                toFieldPath: status.vmReady
+                transforms:
+                  # `match` (unlike `map`) falls back instead of erroring fatally on an
+                  # unmapped value — required because printableStatus can be CrashLoopBackOff,
+                  # Starting, Stopped, etc., and a fatal pipeline error here blocks the
+                  # entire composition from rendering, including unrelated patches (cpu/memory).
+                  - type: match
+                    match:
+                      patterns:
+                        - type: literal
+                          literal: Running
+                          result: "true"
+                      fallbackTo: Value
+                      fallbackValue: "false"
+                  - type: convert
+                    convert:
+                      toType: bool
+              # Static cloud-type classification (L1) — KubeVirt VMs are always
+              # private-cloud. `metadata.name` is used as an arbitrary always-present
+              # source field; the regexp pattern below matches any string, so the
+              # result is always the literal "private" regardless of the source's
+              # actual value (a placeholder-less Format string instead leaves Go
+              # fmt's "%!(EXTRA ...)" artifact appended to the output).
+              # Note: only status.cloudType is patched here, not metadata.labels on
+              # the XR — empirically confirmed (crossplane server v2.2.1-up.1) that
+              # ToCompositeFieldPath patches targeting the XR's own metadata.labels
+              # are silently dropped (composed-resource labels below are unaffected).
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: status.cloudType
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: ".*"
+                          result: "private"
+                      fallbackTo: Value
+                      fallbackValue: "private"
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 4. Service
+          # ===========================================================
+          - name: vm-service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: ""
+                      namespace: ""
+                      labels:
+                        app: ""
+                        platform.ipp.dhl.com/cloud-type: private
+                    spec:
+                      selector:
+                        kubevirt.io/domain: ""
+                      ports:
+                        - name: http
+                          port: 80
+                          targetPort: 80
+                        - name: api
+                          port: 8080
+                          targetPort: 8080
+                      type: ClusterIP
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-svc"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.labels.app
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.selector["kubevirt.io/domain"]
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 5. Ingress
+          # ===========================================================
+          - name: vm-ingress
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: networking.k8s.io/v1
+                    kind: Ingress
+                    metadata:
+                      name: ""
+                      namespace: ""
+                      labels:
+                        platform.ipp.dhl.com/cloud-type: private
+                      annotations:
+                        nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+                    spec:
+                      ingressClassName: nginx
+                      rules:
+                        - host: ""
+                          http:
+                            paths:
+                              - path: /api/
+                                pathType: Prefix
+                                backend:
+                                  service:
+                                    name: ""
+                                    port:
+                                      number: 8080
+                              - path: /
+                                pathType: Prefix
+                                backend:
+                                  service:
+                                    name: ""
+                                    port:
+                                      number: 80
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-ingress"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.ingressHost
+                toFieldPath: spec.forProvider.manifest.spec.rules[0].host
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.rules[0].http.paths[0].backend.service.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.vmName
+                toFieldPath: spec.forProvider.manifest.spec.rules[0].http.paths[1].backend.service.name
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.forProvider.manifest.spec.rules[0].host
+                toFieldPath: status.applicationURL
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "http://%s"
+            readinessChecks:
+              - type: None

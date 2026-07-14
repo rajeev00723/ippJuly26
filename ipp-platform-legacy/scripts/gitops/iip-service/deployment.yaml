@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: iip-service
+  namespace: ipp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: iip-service-targets-preflight
+rules:
+  # Read-only, cluster-scoped, non-secret: used by GET /api/targets to report
+  # whether the Azure ProviderConfig is Ready (never reads the referenced Secret).
+  - apiGroups: ["azure.upbound.io"]
+    resources: ["providerconfigs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: iip-service-targets-preflight
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: iip-service-targets-preflight
+subjects:
+  - kind: ServiceAccount
+    name: iip-service
+    namespace: ipp-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iip-service
+  namespace: ipp-system
+  labels:
+    app: iip-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iip-service
+  template:
+    metadata:
+      labels:
+        app: iip-service
+    spec:
+      serviceAccountName: iip-service
+      containers:
+        - name: iip-service
+          image: ipp-platform/iip-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: GITEA_URL
+              value: "http://gitea.gitea.svc.cluster.local:3000"
+            - name: BOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ipp-bot-credentials
+                  key: username
+            - name: BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ipp-bot-credentials
+                  key: token
+            - name: REPO
+              valueFrom:
+                secretKeyRef:
+                  name: ipp-bot-credentials
+                  key: repo
+            - name: ARGOCD_URL
+              value: "http://argocd-server.argocd.svc.cluster.local"
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: iip-argocd-token
+                  key: token
+                  optional: true
+            - name: POLICY_DIR
+              value: "/app/policy"
+          volumeMounts:
+            - name: conftest-policy
+              mountPath: /app/policy
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: conftest-policy
+          configMap:
+            name: iip-conftest-policy
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iip-service
+  namespace: ipp-system
+spec:
+  selector:
+    app: iip-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iip-service-ingress
+  namespace: ipp-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: iip.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: iip-service
+                port:
+                  number: 80

@@ -1,0 +1,20 @@
+# Backup artifacts
+*.bak
+*.orig
+
+# Sensitive files — policies must never contain raw secrets or private keys
+*.secret.yaml
+*-secret.yaml
+*.pem
+*.key
+*.crt
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Conftest cache
+.conftest/

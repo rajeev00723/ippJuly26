@@ -1,0 +1,130 @@
+{
+  "categories": [
+    { "id": "compute-storage", "label": "Compute & Storage", "icon": "server", "description": "Virtual machines, block storage, and persistent volumes." },
+    { "id": "app-data-obs",    "label": "Application, Data & Observability", "icon": "database", "description": "Managed databases, observability stacks, and app platforms." },
+    { "id": "secure-connect",  "label": "Secure Connectivity", "icon": "network", "description": "VPNs, private endpoints, and zero-trust network access." },
+    { "id": "infra-security",  "label": "Infrastructure Security", "icon": "lock", "description": "Key management, secrets, certificates, and policy engines." }
+  ],
+  "providers": [
+    {
+      "id": "kubevirt",
+      "name": "KubeVirt",
+      "vendor": "CNCF",
+      "version": "1.4.0",
+      "logoKey": "kubevirt",
+      "summary": "Run virtual machines natively on Kubernetes.",
+      "description": "KubeVirt extends Kubernetes by adding additional virtualization resource types through Kubernetes CRDs. By using this mechanism, the KubeVirt community is able to deliver a comprehensive solution for VM management alongside containers.",
+      "categories": ["compute-storage"],
+      "capabilities": ["VirtualMachine", "DataVolume", "VirtualMachineInstance"],
+      "upbound": "https://marketplace.upbound.io/providers/kubevirt/provider-kubevirt"
+    },
+    {
+      "id": "vmware",
+      "name": "VMware vSphere",
+      "vendor": "Crossplane Contrib",
+      "version": "0.1.0",
+      "logoKey": "vmware",
+      "summary": "Manage vSphere VMs and resources declaratively.",
+      "description": "The vSphere Crossplane provider enables GitOps-based management of VMware vSphere infrastructure. Declare your virtual machines, datastores, and networks as Kubernetes resources.",
+      "categories": ["compute-storage"],
+      "capabilities": ["VirtualMachine", "Datastore", "Network"],
+      "upbound": "https://marketplace.upbound.io/providers/ankasoftco/provider-vsphere/v0.1.0"
+    },
+    {
+      "id": "openstack",
+      "name": "OpenStack",
+      "vendor": "Crossplane Contrib",
+      "version": "0.3.0",
+      "logoKey": "openstack",
+      "summary": "Provision and manage OpenStack cloud resources declaratively.",
+      "description": "The OpenStack Crossplane provider enables GitOps-driven management of OpenStack infrastructure — compute instances, networks, security groups, volumes, and object storage — through Kubernetes-native APIs.",
+      "categories": ["compute-storage"],
+      "capabilities": ["ComputeInstance", "Network", "SecurityGroup", "Volume", "ObjectStorage"],
+      "upbound": "https://marketplace.upbound.io/providers/crossplane-contrib/provider-openstack"
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana",
+      "vendor": "Grafana",
+      "version": "2.10.0",
+      "logoKey": "grafana",
+      "summary": "Manage Grafana dashboards, alerts, and data sources via Crossplane.",
+      "description": "The Grafana Crossplane provider enables declarative management of Grafana resources — dashboards, folders, alert rules, contact points, data sources, and teams — through Kubernetes-native APIs. GitOps your entire observability stack alongside your infrastructure.",
+      "categories": ["app-data-obs"],
+      "capabilities": ["Dashboard", "DataSource", "AlertRule", "ContactPoint", "Folder", "Team"],
+      "upbound": "https://marketplace.upbound.io/providers/grafana/provider-grafana/v2.10.0"
+    },
+    {
+      "id": "helm",
+      "name": "Helm",
+      "vendor": "Crossplane Contrib",
+      "version": "0.20.1",
+      "logoKey": "helm",
+      "summary": "Deploy and manage Helm releases as Crossplane managed resources.",
+      "description": "The Helm Crossplane provider lets platform teams declaratively manage Helm chart releases across any Kubernetes cluster. Define releases, values, and namespaces as Kubernetes resources and reconcile them through standard GitOps workflows.",
+      "categories": ["app-data-obs", "secure-connect"],
+      "capabilities": ["Release", "ProviderConfig", "Values", "Repository"],
+      "upbound": "https://marketplace.upbound.io/providers/crossplane-contrib/provider-helm"
+    },
+    {
+      "id": "kubernetes",
+      "name": "Kubernetes",
+      "vendor": "Crossplane Contrib",
+      "version": "0.14.1",
+      "logoKey": "kubernetes",
+      "summary": "Manage Kubernetes objects across clusters as Crossplane resources.",
+      "description": "The Kubernetes Crossplane provider enables declarative management of any Kubernetes resource — across any cluster — as a Crossplane managed resource. Use it to compose multi-cluster deployments, manage RBAC, and provision workload resources from a central control plane.",
+      "categories": ["app-data-obs", "secure-connect", "infra-security"],
+      "capabilities": ["Object", "ProviderConfig", "ObservedObjectCollection"],
+      "upbound": "https://marketplace.upbound.io/providers/crossplane-contrib/provider-kubernetes"
+    },
+    {
+      "id": "aviatrix",
+      "name": "Aviatrix",
+      "vendor": "Aviatrix",
+      "version": "0.8.0",
+      "logoKey": "aviatrix",
+      "summary": "Declaratively manage Aviatrix multi-cloud network connectivity.",
+      "description": "The Aviatrix Crossplane provider enables GitOps-based management of Aviatrix networking resources — transit gateways, spoke gateways, VPN connections, and segmentation domains — across AWS, Azure, GCP, and private cloud targets.",
+      "categories": ["secure-connect"],
+      "capabilities": ["Gateway", "TransitGateway", "VPNConnection", "SegmentationDomain"],
+      "upbound": "https://marketplace.upbound.io/providers/aviatrix/provider-aviatrix"
+    },
+    {
+      "id": "vault",
+      "name": "Vault",
+      "vendor": "Upbound",
+      "version": "0.6.0",
+      "logoKey": "vault",
+      "summary": "Manage HashiCorp Vault secrets, policies, and auth methods declaratively.",
+      "description": "The Vault Crossplane provider enables GitOps-driven management of HashiCorp Vault resources — secret engines, policies, auth methods, PKI roles, and identity groups — as Kubernetes-native managed resources.",
+      "categories": ["infra-security"],
+      "capabilities": ["SecretBackend", "Policy", "AuthBackend", "PKIRole", "IdentityGroup"],
+      "upbound": "https://marketplace.upbound.io/providers/upbound/provider-vault"
+    },
+    {
+      "id": "azuread",
+      "name": "AzureAD",
+      "vendor": "Upbound",
+      "version": "1.5.0",
+      "logoKey": "azuread",
+      "summary": "Manage Azure Active Directory identities and access policies.",
+      "description": "The AzureAD Crossplane provider enables declarative management of Azure Active Directory resources — applications, service principals, groups, role assignments, and conditional access policies — through Kubernetes-native APIs.",
+      "categories": ["infra-security"],
+      "capabilities": ["Application", "ServicePrincipal", "Group", "RoleAssignment", "ConditionalAccessPolicy"],
+      "upbound": "https://marketplace.upbound.io/providers/upbound/provider-azuread"
+    },
+    {
+      "id": "terraform",
+      "name": "Terraform",
+      "vendor": "Upbound",
+      "version": "0.19.0",
+      "logoKey": "terraform",
+      "summary": "Manage any Terraform module as a Crossplane managed resource.",
+      "description": "The Upbound Terraform provider bridges Crossplane and Terraform, allowing platform teams to wrap any Terraform module as a Kubernetes-native Crossplane managed resource. Combine GitOps workflows with the full Terraform ecosystem — providers, modules, and workspaces — all managed declaratively.",
+      "categories": ["compute-storage", "app-data-obs", "secure-connect", "infra-security"],
+      "capabilities": ["Workspace", "ProviderConfig", "TerraformModule", "StateBackend", "VarFile"],
+      "upbound": "https://marketplace.upbound.io/providers/upbound/provider-terraform"
+    }
+  ]
+}

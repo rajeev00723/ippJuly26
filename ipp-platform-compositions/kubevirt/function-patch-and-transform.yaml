@@ -1,0 +1,10 @@
+apiVersion: pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  # v0.9.3 — latest patch in v0.9.x series; same pt.fn.crossplane.io/v1beta1 input API.
+  # v0.10.x skipped — switches to crossplane-runtime v2 internals; defer until tested.
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.9.3

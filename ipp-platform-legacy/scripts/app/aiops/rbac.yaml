@@ -1,0 +1,111 @@
+## AIOps Engine — RBAC
+## Read-only access to all resources needed for multi-agent analysis.
+## Principle of least privilege: no write/delete permissions.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aiops-engine-reader
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+rules:
+  # Core workloads
+  - apiGroups: [""]
+    resources: [pods, pods/log, pods/status, pods/exec, nodes, namespaces, events,
+                services, endpoints, configmaps, replicationcontrollers,
+                resourcequotas, limitranges, serviceaccounts]
+    verbs: [get, list, watch]
+
+  # Apps
+  - apiGroups: ["apps"]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+
+  # Batch
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+
+  # Autoscaling
+  - apiGroups: ["autoscaling"]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+
+  # Networking
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+
+  # Metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources: [pods, nodes]
+    verbs: [get, list]
+
+  # Crossplane
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: [compositions, compositionrevisions, compositeresourcedefinitions]
+    verbs: [get, list, watch]
+  - apiGroups: ["pkg.crossplane.io"]
+    resources: [providers, configurations, providerrevisions, configurationrevisions]
+    verbs: [get, list, watch]
+  # Allow read of all custom groups (needed for XRD composite resources)
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: [get, list, watch]
+
+  # Argo CD
+  - apiGroups: ["argoproj.io"]
+    resources: [applications, applicationsets, appprojects]
+    verbs: [get, list, watch]
+
+  # Kyverno PolicyReports
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources: [policyreports, clusterpolicyreports]
+    verbs: [get, list, watch]
+
+  # OPA Gatekeeper
+  - apiGroups: ["templates.gatekeeper.sh"]
+    resources: [constrainttemplates]
+    verbs: [get, list, watch]
+  - apiGroups: ["constraints.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: [get, list, watch]
+
+  # Cilium
+  - apiGroups: ["cilium.io"]
+    resources: [ciliumnetworkpolicies, ciliumclusterwidenetworkpolicies,
+                ciliumnodes, ciliumendpoints, ciliumidentities]
+    verbs: [get, list, watch]
+
+  # SPIRE
+  - apiGroups: ["spiffeid.spiffe.io"]
+    resources: [spiffeids, clusterspiffeids]
+    verbs: [get, list, watch]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aiops-engine-reader
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+subjects:
+  - kind: ServiceAccount
+    name: aiops-engine
+    namespace: aiops
+roleRef:
+  kind: ClusterRole
+  name: aiops-engine-reader
+  apiGroup: rbac.authorization.k8s.io

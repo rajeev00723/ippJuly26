@@ -1,0 +1,29 @@
+# Backup artifacts
+*.bak
+*.orig
+
+# Shell script generated files
+*.log
+*.pid
+
+# Environment files — never commit
+.env
+*.env
+
+# Python (Makefile targets may invoke Python tooling)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Node build output — never commit compiled assets
+scripts/backstage/packages/app/dist/
+scripts/backstage/packages/backend/dist/
+scripts/backstage/node_modules/
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

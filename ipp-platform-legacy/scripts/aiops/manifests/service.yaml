@@ -1,0 +1,59 @@
+## AIOps Engine v2 — Service + Ingress
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: aiops-engine
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiops-engine-ingress
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: "4m"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location = / { return 302 /docs; }
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aiops.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiops-engine
+                port:
+                  number: 8000
+    - host: aiops.dpcs.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiops-engine
+                port:
+                  number: 8000

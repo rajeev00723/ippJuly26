@@ -1,0 +1,1199 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: aks-cluster
+  labels:
+    platform.iip.com/composition: aks-cluster
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.iip.com/v1alpha1
+    kind: XAKSCluster
+
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: crossplane-contrib-function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          # ── 1. Resource Group ─────────────────────────────────────────────
+          # Uses SubscriptionTemplateDeployment (ARM) since provider-azure has
+          # no standalone ResourceGroup CRD. templateContent + parametersContent
+          # are raw JSON strings (not nested YAML objects).
+          - name: resource-group
+            base:
+              apiVersion: resources.azure.upbound.io/v1beta1
+              kind: SubscriptionTemplateDeployment
+              metadata:
+                labels:
+                  platform.ipp.dhl.com/cloud-type: public
+              spec:
+                forProvider:
+                  location: eastus
+                  templateContent: >
+                    {
+                      "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+                      "contentVersion": "1.0.0.0",
+                      "parameters": {
+                        "rgName": { "type": "string" },
+                        "location": { "type": "string" }
+                      },
+                      "resources": [
+                        {
+                          "type": "Microsoft.Resources/resourceGroups",
+                          "apiVersion": "2021-04-01",
+                          "name": "[parameters('rgName')]",
+                          "location": "[parameters('location')]"
+                        }
+                      ]
+                    }
+                  parametersContent: ""
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.location
+                toFieldPath: spec.forProvider.location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "rg-deployment-%s"
+              # Build parametersContent JSON from clusterName and location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.parametersContent
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: '{"rgName":{"value":"rg-%s"},"location":{"value":"eastus"}}'
+            readinessChecks:
+              - type: MatchTrue
+                fieldPath: status.conditions[0].status
+
+          # ── 2. Virtual Network ─────────────────────────────────────────────
+          - name: virtual-network
+            base:
+              apiVersion: network.azure.upbound.io/v1beta1
+              kind: VirtualNetwork
+              metadata:
+                labels:
+                  platform.ipp.dhl.com/cloud-type: public
+              spec:
+                forProvider:
+                  location: eastus
+                  addressSpace:
+                    - "10.0.0.0/16"
+                  resourceGroupName: ""
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.location
+                toFieldPath: spec.forProvider.location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "vnet-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.resourceGroupName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "rg-%s"
+
+          # ── 3. Subnet ──────────────────────────────────────────────────────
+          - name: subnet
+            base:
+              apiVersion: network.azure.upbound.io/v1beta1
+              kind: Subnet
+              metadata:
+                labels:
+                  platform.ipp.dhl.com/cloud-type: public
+              spec:
+                forProvider:
+                  addressPrefixes:
+                    - "10.0.1.0/24"
+                  virtualNetworkNameSelector:
+                    matchControllerRef: true
+                  resourceGroupName: ""
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "subnet-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.resourceGroupName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "rg-%s"
+            readinessChecks:
+              - type: MatchTrue
+                fieldPath: status.conditions[0].status
+
+          # ── 4. AKS Cluster (BYOCNI — self-managed Cilium via Helm) ─────────
+          # networkPlugin: none enables BYOCNI mode so we can install a
+          # fully-featured Cilium (Hubble + ClusterMesh) ourselves.
+          # Azure-managed Cilium (networkDataPlane: cilium) does NOT support
+          # Hubble or ClusterMesh, which are required for Hubble federation.
+          - name: aks-cluster
+            base:
+              apiVersion: containerservice.azure.upbound.io/v1beta2
+              kind: KubernetesCluster
+              metadata:
+                labels:
+                  platform.ipp.dhl.com/cloud-type: public
+              spec:
+                forProvider:
+                  location: eastus
+                  resourceGroupName: ""
+                  dnsPrefix: aks
+                  defaultNodePool:
+                    name: default
+                    nodeCount: 1
+                    vmSize: Standard_D2s_v7
+                    vnetSubnetIdSelector:
+                      matchControllerRef: true
+                  oidcIssuerEnabled: true
+                  identity:
+                    type: SystemAssigned
+                  networkProfile:
+                    networkPlugin: none
+                    serviceCidr: 10.96.0.0/16
+                    dnsServiceIp: 10.96.0.10
+                providerConfigRef:
+                  name: default
+                writeConnectionSecretToRef:
+                  namespace: crossplane-system
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.location
+                toFieldPath: spec.forProvider.location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.resourceGroupName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "rg-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.dnsPrefix
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.nodeCount
+                toFieldPath: spec.forProvider.defaultNodePool.nodeCount
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.nodeVmSize
+                toFieldPath: spec.forProvider.defaultNodePool.vmSize
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.ownerTeam
+                toFieldPath: spec.forProvider.tags.owner
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: spec.forProvider.tags.environment
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.writeConnectionSecretToRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-kubeconfig"
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.fqdn
+                toFieldPath: status.clusterEndpoint
+              # Static cloud-type classification (L1) — AKS is always public-cloud.
+              # `metadata.name` is used as an arbitrary always-present source
+              # field; the regexp pattern below matches any string, so the result
+              # is always the literal "public" regardless of the source's actual
+              # value (a placeholder-less Format string instead leaves Go fmt's
+              # "%!(EXTRA ...)" artifact appended to the output).
+              # Note: only status.cloudType is patched here, not metadata.labels on
+              # the XR — empirically confirmed (crossplane server v2.2.1-up.1) that
+              # ToCompositeFieldPath patches targeting the XR's own metadata.labels
+              # are silently dropped (composed-resource labels below are unaffected).
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: status.cloudType
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: ".*"
+                          result: "public"
+                      fallbackTo: Value
+                      fallbackValue: "public"
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.fqdn
+            connectionDetails:
+              - name: kubeconfig
+                type: FromConnectionSecretKey
+                fromConnectionSecretKey: kubeconfig
+              - name: endpoint
+                type: FromFieldPath
+                fromFieldPath: status.atProvider.fqdn
+
+          # ── 5. provider-helm ProviderConfig for AKS ───────────────────────
+          # Created as a local Object so provider-helm can target the AKS
+          # cluster when installing Cilium. References the kubeconfig secret
+          # written by resource 4 above. Idempotent: apply is a no-op if
+          # unchanged. Named aks-{clusterName} to avoid collisions across
+          # multiple AKS clusters.
+          - name: helm-providerconfig
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: helm.crossplane.io/v1beta1
+                    kind: ProviderConfig
+                    metadata:
+                      name: ""
+                    spec:
+                      credentials:
+                        source: Secret
+                        secretRef:
+                          namespace: crossplane-system
+                          name: ""
+                          key: kubeconfig
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "helm-pc-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.credentials.secretRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-kubeconfig"
+            readinessChecks:
+              - type: None
+
+          # ── 6. Cilium HelmRelease on AKS ──────────────────────────────────
+          # Installs self-managed Cilium with Hubble + ClusterMesh on the AKS
+          # cluster. Uses the ProviderConfig from resource 5.
+          #
+          # cluster.id: derived deterministically from clusterName so multiple
+          # AKS clusters get unique IDs without manual assignment. Formula
+          # produces a value in [2,254] (1 is reserved for kind-ipp).
+          # The patch below sets it via the clusterName string — the Job in
+          # resource 8 recalculates the same value at connect time.
+          - name: cilium-helm-release
+            base:
+              apiVersion: helm.crossplane.io/v1beta1
+              kind: Release
+              spec:
+                providerConfigRef:
+                  name: ""
+                rollbackLimit: 3
+                forProvider:
+                  chart:
+                    name: cilium
+                    repository: https://helm.cilium.io/
+                    version: "1.15.4"
+                  namespace: kube-system
+                  wait: true
+                  waitTimeout: 10m
+                  values:
+                    # BYOCNI on AKS: use VXLAN tunnel + cluster-pool IPAM.
+                    # Azure IPAM mode requires Azure RBAC for the operator pod,
+                    # which is complex to wire up via Crossplane. cluster-pool
+                    # is self-contained and works with networkPlugin=none.
+                    routingMode: tunnel
+                    tunnelProtocol: vxlan
+                    ipam:
+                      mode: cluster-pool
+                      operator:
+                        clusterPoolIPv4PodCIDRList:
+                          - "10.244.0.0/16"
+                    azure:
+                      enabled: false
+                    # Disable kube-proxy replacement (AKS manages kube-proxy)
+                    kubeProxyReplacement: false
+                    # Hubble — enables network observability
+                    hubble:
+                      enabled: true
+                      relay:
+                        enabled: true
+                      ui:
+                        enabled: false
+                      metrics:
+                        enabled:
+                          - dns
+                          - drop
+                          - tcp
+                          - flow
+                          - icmp
+                          - http
+                      tls:
+                        enabled: true
+                    # ClusterMesh — enables multi-cluster federation
+                    clustermesh:
+                      useAPIServer: true
+                      apiserver:
+                        replicas: 1
+                        service:
+                          type: LoadBalancer
+                    cluster:
+                      name: ""
+                      id: 2
+                    operator:
+                      replicas: 1
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "cilium-aks-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.values.cluster.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 7. Hubble Peer LoadBalancer on AKS ────────────────────────────
+          # Exposes the Cilium Hubble peer port (4244) as an Azure LoadBalancer
+          # so the local KIND Hubble Relay can pull flows from AKS nodes.
+          # The IP is set in the ClusterMesh connect Job (resource 8).
+          - name: hubble-peer-lb
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: hubble-peer-external
+                      namespace: kube-system
+                      annotations:
+                        service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+                    spec:
+                      type: LoadBalancer
+                      selector:
+                        k8s-app: cilium
+                      ports:
+                        - name: peer-service
+                          port: 4244
+                          targetPort: 4244
+                          protocol: TCP
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-peer-lb-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 8. ClusterMesh Connect Job ─────────────────────────────────────
+          # Runs in the LOCAL KIND cluster after AKS + Cilium are ready.
+          # Uses both kubeconfigs to run `cilium clustermesh connect`, which
+          # establishes the bidirectional ClusterMesh federation.
+          # After this Job completes, AKS flows appear in local Hubble UI.
+          #
+          # Idempotent: clustermesh connect is safe to re-run; the Job name
+          # is deterministic so Crossplane treats it as the same object.
+          # The Job uses rancher/kubectl (available on KIND nodes, no pull).
+          # helm + cilium CLI are installed inline from the alpine package
+          # manager which IS available from within the KIND docker network.
+          - name: clustermesh-connect-job
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: default
+                forProvider:
+                  manifest:
+                    apiVersion: batch/v1
+                    kind: Job
+                    metadata:
+                      name: ""
+                      namespace: crossplane-system
+                      labels:
+                        platform.iip.com/component: clustermesh-connect
+                    spec:
+                      ttlSecondsAfterFinished: 600
+                      backoffLimit: 5
+                      template:
+                        metadata:
+                          labels:
+                            app: clustermesh-connect
+                            owner: platform-idp
+                            environment: platform
+                        spec:
+                          restartPolicy: OnFailure
+                          serviceAccountName: crossplane
+                          volumes:
+                            - name: kind-kubeconfig
+                              secret:
+                                secretName: kind-ipp-kubeconfig
+                                optional: true
+                            - name: aks-kubeconfig
+                              secret:
+                                secretName: ""
+                          containers:
+                            - name: clustermesh-connect
+                              image: bitnami/kubectl:1.28.5
+                              imagePullPolicy: IfNotPresent
+                              command: ["/bin/bash", "-c"]
+                              args:
+                                - |
+                                  set -euo pipefail
+
+                                  AKS_NAME="${AKS_CLUSTER_NAME}"
+                                  echo "=== ClusterMesh Connect: kind-ipp <-> aks-${AKS_NAME} ==="
+
+                                  # Write kubeconfigs to files
+                                  mkdir -p /tmp/kubeconfigs
+                                  cp /kubeconfigs/kind/kubeconfig   /tmp/kubeconfigs/kind.yaml  2>/dev/null || \
+                                    kubectl config view --raw > /tmp/kubeconfigs/kind.yaml
+                                  cp /kubeconfigs/aks/kubeconfig    /tmp/kubeconfigs/aks.yaml
+
+                                  # Install cilium CLI
+                                  if ! command -v cilium &>/dev/null; then
+                                    echo "Downloading cilium CLI..."
+                                    curl -sL "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz" \
+                                      | tar -xz -C /usr/local/bin cilium || \
+                                    curl -sL "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz" \
+                                      | tar -xz -C /usr/local/bin cilium
+                                  fi
+
+                                  # Check ClusterMesh API server is ready on AKS
+                                  echo "Waiting for ClusterMesh API server on AKS..."
+                                  for i in $(seq 1 20); do
+                                    kubectl --kubeconfig=/tmp/kubeconfigs/aks.yaml \
+                                      get svc clustermesh-apiserver -n kube-system &>/dev/null && break
+                                    echo "  attempt $i/20 — not ready yet, sleeping 30s..."
+                                    sleep 30
+                                  done
+
+                                  # Run clustermesh connect
+                                  echo "Running cilium clustermesh connect..."
+                                  cilium clustermesh connect \
+                                    --context "" \
+                                    --destination-context "" \
+                                    --kubeconfig /tmp/kubeconfigs/kind.yaml \
+                                    --destination-kubeconfig /tmp/kubeconfigs/aks.yaml \
+                                    2>&1 || echo "WARN: clustermesh connect returned non-zero (may already be connected)"
+
+                                  echo "=== ClusterMesh connect complete ==="
+
+                                  # Verify
+                                  cilium clustermesh status \
+                                    --kubeconfig /tmp/kubeconfigs/kind.yaml 2>&1 || true
+                              resources:
+                                requests:
+                                  cpu: 50m
+                                  memory: 64Mi
+                                limits:
+                                  cpu: 500m
+                                  memory: 256Mi
+                              env:
+                                - name: AKS_CLUSTER_NAME
+                                  value: ""
+                              volumeMounts:
+                                - name: kind-kubeconfig
+                                  mountPath: /kubeconfigs/kind
+                                - name: aks-kubeconfig
+                                  mountPath: /kubeconfigs/aks
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "cm-connect-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "clustermesh-connect-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.volumes[1].secret.secretName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-kubeconfig"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[0].value
+            readinessChecks:
+              - type: None
+
+          # ── 9. provider-kubernetes ProviderConfig for AKS ─────────────────
+          # Separate from the helm ProviderConfig (resource 5) — needed so
+          # provider-kubernetes can create Objects (Deployments, Services, etc.)
+          # directly on the AKS cluster. Also fixes the hubble-peer-lb resource.
+          - name: k8s-providerconfig
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: kubernetes.crossplane.io/v1alpha1
+                    kind: ProviderConfig
+                    metadata:
+                      name: ""
+                    spec:
+                      credentials:
+                        source: Secret
+                        secretRef:
+                          namespace: crossplane-system
+                          name: ""
+                          key: kubeconfig
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8s-pc-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.credentials.secretRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-kubeconfig"
+            readinessChecks:
+              - type: None
+
+          # ── 10. Sample App Namespace on AKS ───────────────────────────────
+          - name: sample-app-namespace
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Namespace
+                    metadata:
+                      name: ipp-demo
+                      labels:
+                        platform.iip.com/managed: "true"
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "sample-ns-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 11. Sample App ConfigMap (HTML) on AKS ────────────────────────
+          - name: sample-app-configmap
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: ipp-sample-app-html
+                      namespace: ipp-demo
+                    data:
+                      index.html: |
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                          <title>IPP Demo — AKS Cluster</title>
+                          <style>
+                            body{font-family:sans-serif;background:#0f1923;color:#e0e6f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+                            .card{background:#1a2535;border:1px solid #2d3f55;border-radius:12px;padding:40px 48px;max-width:520px;text-align:center}
+                            .badge{display:inline-block;background:#0078d4;color:#fff;font-size:.75em;padding:3px 10px;border-radius:20px;margin-bottom:16px}
+                            h1{font-size:1.8em;margin:0 0 8px;color:#60b0ff}
+                            p{color:#8fa8c8;margin:6px 0}
+                            .meta{margin-top:24px;background:#0f1923;border-radius:8px;padding:16px;font-size:.85em;color:#5a7a9a;text-align:left}
+                            .meta span{color:#60b0ff}
+                          </style>
+                        </head>
+                        <body>
+                          <div class="card">
+                            <div class="badge">☁️ Azure AKS</div>
+                            <h1>IPP Sample App</h1>
+                            <p>Provisioned by Backstage · Managed by Crossplane</p>
+                            <p>Network visibility via <strong>Cilium + Hubble</strong></p>
+                            <div class="meta">
+                              <div>Cluster: <span id="cn">loading...</span></div>
+                              <div>CNI: <span>Cilium 1.15.4 (BYOCNI)</span></div>
+                              <div>ClusterMesh: <span>Connected → kind-ipp</span></div>
+                              <div>Platform: <span>Infrastructure Interface Platform</span></div>
+                            </div>
+                          </div>
+                          <script>fetch('/api/cluster').then(r=>r.json()).then(d=>document.getElementById('cn').textContent=d.name).catch(()=>document.getElementById('cn').textContent='aks-cluster')</script>
+                        </body>
+                        </html>
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "sample-cm-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 12. Sample App Deployment on AKS ──────────────────────────────
+          - name: sample-app-deployment
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    metadata:
+                      name: ipp-sample-app
+                      namespace: ipp-demo
+                      labels:
+                        app: ipp-sample-app
+                    spec:
+                      replicas: 2
+                      selector:
+                        matchLabels:
+                          app: ipp-sample-app
+                      template:
+                        metadata:
+                          labels:
+                            app: ipp-sample-app
+                        spec:
+                          containers:
+                            - name: app
+                              image: nginx:alpine
+                              ports:
+                                - containerPort: 80
+                              resources:
+                                requests:
+                                  cpu: 10m
+                                  memory: 16Mi
+                                limits:
+                                  cpu: 100m
+                                  memory: 64Mi
+                              volumeMounts:
+                                - name: html
+                                  mountPath: /usr/share/nginx/html
+                          volumes:
+                            - name: html
+                              configMap:
+                                name: ipp-sample-app-html
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "sample-deploy-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 13. Sample App Service on AKS ─────────────────────────────────
+          - name: sample-app-service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: ipp-sample-app
+                      namespace: ipp-demo
+                      labels:
+                        app: ipp-sample-app
+                      annotations:
+                        # Cilium ClusterMesh — expose this service to all connected clusters
+                        service.cilium.io/global: "true"
+                        service.cilium.io/shared: "true"
+                    spec:
+                      selector:
+                        app: ipp-sample-app
+                      ports:
+                        - port: 80
+                          targetPort: 80
+                      type: LoadBalancer
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "sample-svc-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+              # Surface the Azure LoadBalancer IP on the claim once assigned —
+              # provider-kubernetes mirrors the live Service (including
+              # status.loadBalancer) into status.atProvider.manifest.
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.loadBalancer.ingress[0].ip
+                toFieldPath: status.appIp
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.loadBalancer.ingress[0].ip
+                toFieldPath: status.appUrl
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "http://%s"
+            readinessChecks:
+              - type: None
+
+          # ── 14. Cross-Cluster Traffic Generator ───────────────────────────
+          # CronJob runs on AKS every minute, curls the KIND employee-portal
+          # via ClusterMesh global service DNS. Traffic appears in KIND Hubble
+          # UI as cross-cluster flows with source cluster = aks-<name>.
+          - name: cross-cluster-traffic-gen
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: batch/v1
+                    kind: CronJob
+                    metadata:
+                      name: cross-cluster-ping
+                      namespace: ipp-demo
+                      labels:
+                        app: cross-cluster-ping
+                        platform.iip.com/demo: clustermesh
+                    spec:
+                      schedule: "*/1 * * * *"
+                      concurrencyPolicy: Forbid
+                      successfulJobsHistoryLimit: 3
+                      failedJobsHistoryLimit: 1
+                      jobTemplate:
+                        spec:
+                          template:
+                            metadata:
+                              labels:
+                                app: cross-cluster-ping
+                                platform.iip.com/demo: clustermesh
+                            spec:
+                              restartPolicy: Never
+                              containers:
+                                - name: ping
+                                  image: curlimages/curl:8.5.0
+                                  resources:
+                                    requests:
+                                      cpu: 5m
+                                      memory: 8Mi
+                                    limits:
+                                      cpu: 50m
+                                      memory: 32Mi
+                                  command:
+                                    - /bin/sh
+                                    - -c
+                                    - |
+                                      echo "=== Cross-cluster ping: AKS → KIND ==="
+                                      curl -sf --max-time 5 \
+                                        http://employee-frontend.employee-portal.svc.cluster.local/ \
+                                        && echo "KIND employee-portal: OK" \
+                                        || echo "KIND employee-portal: unreachable (ClusterMesh not yet connected)"
+                                      curl -sf --max-time 5 \
+                                        http://ipp-sample-app.ipp-demo.svc.cluster.local/ \
+                                        && echo "AKS ipp-sample-app: OK" \
+                                        || echo "AKS ipp-sample-app: unreachable"
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "cross-cluster-ping-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 15. Hubble UI — ServiceAccount ────────────────────────────────
+          - name: hubble-ui-sa
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ServiceAccount
+                    metadata:
+                      name: hubble-ui
+                      namespace: kube-system
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-ui-sa-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 16. Hubble UI — ClusterRole ────────────────────────────────────
+          - name: hubble-ui-clusterrole
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: rbac.authorization.k8s.io/v1
+                    kind: ClusterRole
+                    metadata:
+                      name: hubble-ui
+                    rules:
+                    - apiGroups: ["networking.k8s.io"]
+                      resources: ["networkpolicies"]
+                      verbs: ["get","list","watch"]
+                    - apiGroups: [""]
+                      resources: ["componentstatuses","endpoints","namespaces","nodes","pods","services"]
+                      verbs: ["get","list","watch"]
+                    - apiGroups: ["apiextensions.k8s.io"]
+                      resources: ["customresourcedefinitions"]
+                      verbs: ["get","list","watch"]
+                    - apiGroups: ["cilium.io"]
+                      resources: ["*"]
+                      verbs: ["get","list","watch"]
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-ui-clusterrole-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 17. Hubble UI — ClusterRoleBinding ────────────────────────────
+          - name: hubble-ui-crb
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: rbac.authorization.k8s.io/v1
+                    kind: ClusterRoleBinding
+                    metadata:
+                      name: hubble-ui
+                    roleRef:
+                      apiGroup: rbac.authorization.k8s.io
+                      kind: ClusterRole
+                      name: hubble-ui
+                    subjects:
+                    - kind: ServiceAccount
+                      name: hubble-ui
+                      namespace: kube-system
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-ui-crb-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 18. Hubble UI — Deployment ────────────────────────────────────
+          - name: hubble-ui-deploy
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    metadata:
+                      name: hubble-ui
+                      namespace: kube-system
+                    spec:
+                      replicas: 1
+                      selector:
+                        matchLabels:
+                          k8s-app: hubble-ui
+                      template:
+                        metadata:
+                          labels:
+                            k8s-app: hubble-ui
+                        spec:
+                          serviceAccountName: hubble-ui
+                          containers:
+                          - name: frontend
+                            image: quay.io/cilium/hubble-ui:v0.13.0
+                            ports:
+                            - containerPort: 8081
+                            env:
+                            - name: EVENTS_SERVER_PORT
+                              value: "8090"
+                          - name: backend
+                            image: quay.io/cilium/hubble-ui-backend:v0.13.0
+                            ports:
+                            - containerPort: 8090
+                            env:
+                            - name: EVENTS_SERVER_PORT
+                              value: "8090"
+                            - name: FLOWS_API_ADDR
+                              value: "hubble-relay:80"
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-ui-deploy-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None
+
+          # ── 19. Hubble UI — LoadBalancer Service ──────────────────────────
+          - name: hubble-ui-svc
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: ""
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: hubble-ui
+                      namespace: kube-system
+                    spec:
+                      type: LoadBalancer
+                      selector:
+                        k8s-app: hubble-ui
+                      ports:
+                      - name: http
+                        port: 80
+                        targetPort: 8081
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "hubble-ui-svc-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "aks-%s"
+            readinessChecks:
+              - type: None

@@ -1,0 +1,91 @@
+## AIOps Engine v2 — Namespace + Deployment
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiops
+  labels:
+    app.kubernetes.io/part-of: idp-platform
+    owner: platform
+    environment: demo
+    cost-center: platform
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+    app.kubernetes.io/version: "2.0.0"
+    owner: platform
+    cost-center: platform
+    environment: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiops-engine
+  template:
+    metadata:
+      labels:
+        app: aiops-engine
+        app.kubernetes.io/name: aiops-engine
+        owner: platform
+        cost-center: platform
+        environment: demo
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: aiops-engine
+      containers:
+        - name: aiops-engine
+          image: idp-demo/aiops-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: aiops-config
+            - secretRef:
+                name: aiops-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # LangChain needs tmp writes
+            runAsNonRoot: true
+            runAsUser: 1000
+      securityContext:
+        fsGroup: 1000
+      # Allow access to host for Ollama via host.docker.internal
+      hostAliases: []

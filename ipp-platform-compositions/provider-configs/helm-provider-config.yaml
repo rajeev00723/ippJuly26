@@ -1,0 +1,57 @@
+# ProviderConfig for provider-helm using in-cluster credentials.
+# The Helm provider pod runs with a ServiceAccount bound to cluster-admin,
+# allowing it to install/upgrade Helm releases into any namespace.
+#
+# Apply AFTER the Provider is installed and its pod is Running.
+#
+# NOTE (found while building the real vcluster composition, Wave 3): the
+# `provider-helm` ServiceAccount below and its DeploymentRuntimeConfig
+# (../providers/provider-helm.yaml, serviceAccountName: provider-helm) are
+# NEVER actually attached to the running pod. provider-helm is installed via
+# the UXP Helm chart's simple `provider.packages` image list
+# (install/upbound-crossplane-values.yaml), which auto-creates a bare
+# `Provider` object with no `runtimeConfigRef` — there's no way to attach a
+# DeploymentRuntimeConfig through that list, and provider-helm.yaml's own
+# comment explains why an explicit `Provider` object isn't defined here
+# instead (duplicate-node lock-graph error). So the pod actually runs under
+# Crossplane's auto-generated per-package-revision SA (e.g.
+# `crossplane-contrib-provider-helm-<hash>` — check with
+# `kubectl get pods -n crossplane-system -l pkg.crossplane.io/provider=crossplane-contrib-provider-helm
+#  -o jsonpath='{.items[0].spec.serviceAccountName}'`), which changes on every
+# provider reinstall/upgrade. The binding below targets that actual SA name;
+# re-verify and update it after any provider-helm version bump.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-helm
+  namespace: crossplane-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-helm-cluster-admin
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+subjects:
+  - kind: ServiceAccount
+    name: crossplane-contrib-provider-helm-9abd50db4cc4
+    namespace: crossplane-system
+roleRef:
+  kind: ClusterRole
+  # cluster-admin grants full access; scope down in production
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: helm.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  # InjectedIdentity uses the pod's mounted service-account token to
+  # authenticate against the in-cluster kube-apiserver.
+  credentials:
+    source: InjectedIdentity

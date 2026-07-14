@@ -1,0 +1,36 @@
+# Supplementary RBAC for Crossplane core (not the Helm chart's auto-managed
+# `crossplane` ClusterRole, which gets reverted on chart upgrade).
+#
+# Required by compositions using "Realtime Compositions" to compose plain
+# core Kubernetes types directly (e.g. kind-cluster-composition.yaml composes
+# a raw v1 Namespace, not wrapped in a kubernetes.crossplane.io Object). For
+# Crossplane core itself to set up the dynamic informer for such a resource,
+# its own ServiceAccount needs list/watch/get RBAC on that type — the
+# provider-kubernetes RBAC does NOT cover this, since no provider is involved.
+# Symptom without this: composite status stuck on
+#   "cannot get composed resource: Timeout: failed waiting for
+#    *unstructured.Unstructured Informer to sync"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane-core-realtime-composition-rbac
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces/status"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crossplane-core-realtime-composition-rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crossplane-core-realtime-composition-rbac
+subjects:
+  - kind: ServiceAccount
+    name: crossplane
+    namespace: crossplane-system

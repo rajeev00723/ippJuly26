@@ -1,0 +1,104 @@
+---
+# ClusterSPIFFEID for employee-portal frontend
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: employee-portal-frontend
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  spiffeIDTemplate: "spiffe://idp-demo.local/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: frontend
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: employee-portal
+  ttl: 1h
+
+---
+# ClusterSPIFFEID for employee-portal backend
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: employee-portal-backend
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  spiffeIDTemplate: "spiffe://idp-demo.local/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: backend
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: employee-portal
+  ttl: 1h
+
+---
+# ClusterSPIFFEID for employee-portal postgres
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: employee-portal-postgres
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  spiffeIDTemplate: "spiffe://idp-demo.local/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: postgres
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: employee-portal
+  ttl: 1h
+
+---
+# ClusterSPIFFEID for platform aiops-engine
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: platform-aiops-engine
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  spiffeIDTemplate: "spiffe://idp-demo.local/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: aiops-engine
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: platform
+  ttl: 1h
+
+---
+# ClusterSPIFFEID for backstage
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: backstage-backstage
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  spiffeIDTemplate: "spiffe://idp-demo.local/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      app: backstage
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: backstage
+  ttl: 1h

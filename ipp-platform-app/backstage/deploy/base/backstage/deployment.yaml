@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app: backstage
+    managed-by: ipp-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+        managed-by: ipp-platform
+    spec:
+      serviceAccountName: backstage
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: backstage
+          image: ipp-platform/backstage:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 7007
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DEMO_MODE
+              value: "true"
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: POSTGRES_PASSWORD
+            - name: BACKSTAGE_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: BACKSTAGE_SESSION_SECRET
+            - name: K8S_SA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: K8S_SA_TOKEN
+            - name: K8S_CA_DATA
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: K8S_CA_DATA
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: ARGOCD_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7007
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7007
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app: backstage
+    managed-by: ipp-platform
+spec:
+  selector:
+    app: backstage
+  ports:
+    - name: http
+      port: 7007
+      targetPort: 7007
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    managed-by: ipp-platform
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    managed-by: ipp-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: backstage.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backstage
+                port:
+                  number: 7007

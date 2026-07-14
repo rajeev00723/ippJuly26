@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    managed-by: ipp-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiops-engine
+  template:
+    metadata:
+      labels:
+        app: aiops-engine
+        managed-by: ipp-platform
+    spec:
+      serviceAccountName: aiops-engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: aiops-engine
+          image: ipp-platform/aiops-engine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: DEMO_MODE
+              value: "true"
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama.aiops.svc.cluster.local:11434"
+            - name: OLLAMA_MODEL
+              value: "llama3"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    managed-by: ipp-platform
+spec:
+  selector:
+    app: aiops-engine
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    managed-by: ipp-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aiops.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiops-engine
+                port:
+                  number: 8000

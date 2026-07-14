@@ -1,0 +1,159 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: vcluster-cluster
+  labels:
+    platform.iip.com/composition: vcluster-cluster
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.iip.com/v1alpha1
+    kind: XKindCluster
+
+  mode: Pipeline
+  pipeline:
+    - step: provision-vcluster
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          # ── 1. Namespace to host the vcluster release ────────────────────
+          - name: vcluster-namespace
+            base:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                labels:
+                  platform.iip.com/managed-by: crossplane
+                  platform.iip.com/type: vcluster
+                  platform.ipp.dhl.com/cloud-type: private
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "vcluster-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: metadata.labels["platform.iip.com/environment"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.ownerTeam
+                toFieldPath: metadata.labels["platform.iip.com/owner"]
+            readinessChecks:
+              - type: None
+
+          # ── 2. vcluster Helm release — a real, isolated Kubernetes API
+          # server (k3s distro) running inside the namespace above. Chart
+          # version pinned; bump via a controlled PR (see D6/Renovate follow-up).
+          # Readiness reflects Helm's own "deployed" state — this means the
+          # release's manifests were applied successfully, not that the
+          # vcluster API server pod has finished starting (a stronger signal
+          # would need a second resource watching the StatefulSet directly,
+          # deferred as a possible follow-up).
+          - name: vcluster-release
+            base:
+              apiVersion: helm.crossplane.io/v1beta1
+              kind: Release
+              spec:
+                providerConfigRef:
+                  name: default
+                rollbackLimit: 3
+                forProvider:
+                  namespace: ""
+                  # The namespace is already created above as a Crossplane-composed
+                  # resource (via the privileged XR controller identity); provider-helm's
+                  # own controller ServiceAccount is intentionally not granted
+                  # cluster-scoped namespace-create RBAC, so this must be true or the
+                  # release fails with "namespaces is forbidden at the cluster scope".
+                  skipCreateNamespace: true
+                  chart:
+                    name: vcluster
+                    repository: https://charts.loft.sh
+                    version: "0.35.1"
+                  values:
+                    exportKubeConfig:
+                      secret:
+                        name: ""
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "vcluster-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.namespace
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "vcluster-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: spec.forProvider.values.exportKubeConfig.secret.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-kubeconfig"
+              # status.clusterReady <- Helm release state == "deployed"
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.state
+                toFieldPath: status.clusterReady
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: literal
+                          literal: deployed
+                          result: "true"
+                      fallbackTo: Value
+                      fallbackValue: "false"
+                  - type: convert
+                    convert:
+                      toType: bool
+                policy:
+                  fromFieldPath: Optional
+              # status.kubeconfigSecret <- read back the same value set two patches
+              # above (spec.forProvider.values.exportKubeConfig.secret.name is
+              # already "<clusterName>-kubeconfig"), telling the caller exactly
+              # which Secret (in the vcluster-<clusterName> namespace) holds the
+              # real kubeconfig.
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.forProvider.values.exportKubeConfig.secret.name
+                toFieldPath: status.kubeconfigSecret
+                policy:
+                  fromFieldPath: Optional
+              # Static cloud-type classification (L1) — vcluster is always
+              # private-cloud. `metadata.name` is used as an arbitrary
+              # always-present source field; the regexp pattern below matches
+              # any string, so the result is always the literal "private"
+              # regardless of the source's actual value.
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: status.cloudType
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: ".*"
+                          result: "private"
+                      fallbackTo: Value
+                      fallbackValue: "private"
+                policy:
+                  fromFieldPath: Optional
+            readinessChecks:
+              - type: MatchString
+                fieldPath: status.atProvider.state
+                matchString: deployed

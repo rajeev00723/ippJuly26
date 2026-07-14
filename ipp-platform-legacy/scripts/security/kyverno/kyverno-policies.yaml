@@ -1,0 +1,401 @@
+---
+# Policy 1: require-resource-limits
+# Validates all pods have CPU and memory resource limits defined
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Resource limits are critical for production stability. This policy audits
+      all pods to ensure CPU and memory limits are defined on every container.
+      Without limits, a single misbehaving container can exhaust node resources.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: validate-cpu-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "CPU limits are required for all containers. Add 'resources.limits.cpu' to container spec."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    cpu: "?*"
+    - name: validate-memory-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Memory limits are required for all containers. Add 'resources.limits.memory' to container spec."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+    - name: validate-init-cpu-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "CPU limits are required for all init containers."
+        pattern:
+          spec:
+            =(initContainers):
+              - resources:
+                  limits:
+                    cpu: "?*"
+    - name: validate-init-memory-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Memory limits are required for all init containers."
+        pattern:
+          spec:
+            =(initContainers):
+              - resources:
+                  limits:
+                    memory: "?*"
+
+---
+# Policy 2: disallow-latest-tag
+# Audits containers using the :latest image tag
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Disallow Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      The :latest tag is mutable and can lead to unexpected changes in running
+      containers. This policy audits pods that use container images with the
+      :latest tag, requiring specific version pinning in production.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Image tag :latest is discouraged. Use a specific version tag."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.image }}"
+                    operator: Equals
+                    value: "*:latest"
+
+---
+# Policy 3: require-labels
+# Requires app, owner, and environment labels on all pods
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Labels are used for resource organization, cost allocation, and operational
+      tooling. This policy audits pods to ensure they carry the 'app', 'owner',
+      and 'environment' labels.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: require-app-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "The label 'app' is required on all pods. Add it to the pod's metadata.labels."
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+    - name: require-owner-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "The label 'owner' is required on all pods. Add it to the pod's metadata.labels."
+        pattern:
+          metadata:
+            labels:
+              owner: "?*"
+    - name: require-environment-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "The label 'environment' is required on all pods. Add it to the pod's metadata.labels."
+        pattern:
+          metadata:
+            labels:
+              environment: "?*"
+
+---
+# Policy 4: add-default-labels (mutating)
+# Adds default platform labels to pods if they are missing
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-labels
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Add Default Labels
+    policies.kyverno.io/category: Platform Engineering
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This mutating policy automatically adds platform-level labels to all pods
+      if they are not already present. This ensures consistent labeling for
+      cost tracking and platform tooling without requiring manual intervention.
+spec:
+  background: false
+  rules:
+    - name: add-managed-by-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              +(managed-by): "platform-idp"
+              +(platform-version): "v1"
+
+---
+# Policy 5: disallow-privileged
+# Disallows privileged containers - enforced (not audit)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Privileged containers have access to all Linux kernel capabilities and
+      devices. This policy enforces that no containers run in privileged mode,
+      significantly reducing the attack surface of the cluster.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: disallow-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - gatekeeper-system
+                - crossplane-system
+                - ingress-nginx
+                - spire
+                - monitoring
+                - opencost
+                - aiops
+                - local-path-storage
+                - kubevirt
+      validate:
+        message: "Privileged containers are not allowed. Remove 'securityContext.privileged: true' from the container spec."
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): "false | null"
+    - name: disallow-privileged-init-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - gatekeeper-system
+                - crossplane-system
+                - ingress-nginx
+                - spire
+                - monitoring
+                - opencost
+                - aiops
+                - local-path-storage
+                - kubevirt
+      validate:
+        message: "Privileged init containers are not allowed."
+        pattern:
+          spec:
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false | null"
+    - name: disallow-privileged-ephemeral-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - gatekeeper-system
+                - crossplane-system
+                - ingress-nginx
+                - spire
+                - monitoring
+                - opencost
+                - aiops
+                - local-path-storage
+                - kubevirt
+      validate:
+        message: "Privileged ephemeral containers are not allowed."
+        pattern:
+          spec:
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(privileged): "false | null"
+
+---
+# Policy 6: require-approved-registry
+# Audits images from non-approved registries
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-approved-registry
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    policies.kyverno.io/title: Require Approved Registry
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      All container images must originate from approved registries.
+      Approved: ghcr.io/*, docker.io/*, registry.k8s.io/*, quay.io/*,
+      idp-demo/*, and standard postgres/nginx base images.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: validate-approved-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - gatekeeper-system
+                - crossplane-system
+                - ingress-nginx
+                - spire
+                - argocd
+                - monitoring
+                - opencost
+                - aiops
+      validate:
+        message: "Images must come from approved registries: ghcr.io, docker.io, registry.k8s.io, quay.io, or idp-demo"
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: AnyNotIn
+                    value:
+                      - "ghcr.io/*"
+                      - "docker.io/*"
+                      - "registry.k8s.io/*"
+                      - "quay.io/*"
+                      - "idp-demo/*"
+                      - "postgres:*"
+                      - "postgres"
+                      - "nginx:*"
+                      - "nginx"
+                      - "alpine:*"
+                      - "python:*"
+                      - "node:*"
+                      - "golang:*"

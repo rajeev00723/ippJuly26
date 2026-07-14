@@ -1,0 +1,28 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPVirtualMachineClaim
+metadata:
+  name: demo-vm-01
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZKPG0J
+    iip.dhl.com/provisioning-id: 01KVZKPG0JNNWWZVF0VQ0PD845
+    iip.dhl.com/requested-by: amitabh.sharan@dhl.com
+    iip.dhl.com/cost-center: CC-9001
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-logistics
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T14:42:13.659Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZKPG0JNNWWZVF0VQ0PD845
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    vmName: demo-vm-01
+    targetProvider: vsphere
+    environment: dev
+    vmSize: Standard_B2s
+    osType: linux
+    location: westeurope
+    ownerTeam: bu-logistics
+    requestedBy: amitabh.sharan@dhl.com
+    costCenter: CC-9001

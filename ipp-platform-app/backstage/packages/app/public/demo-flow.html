@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IIP — Demo Flow &amp; Architecture</title>
+  <style>
+    :root {
+      --bg:       #FAFAF8;
+      --surface:  #FFFFFF;
+      --surface2: #F7F5EF;
+      --border:   #E5E7EB;
+      --text:     #1A1A1A;
+      --muted:    #6B6B6B;
+      --red:      #D40511;
+      --yellow:   #FFCC00;
+
+      --c-infra:    #22c55e;
+      --c-network:  #3b82f6;
+      --c-security: #a855f7;
+      --c-platform: #eab308;
+      --c-observe:  #06b6d4;
+      --c-app:      #f97316;
+      --c-portal:   #10b981;
+      --c-gitops:   #8b5cf6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 0 24px 48px;
+      border-top: 3px solid;
+      border-image: linear-gradient(90deg, #D40511 0%, #FFCC00 100%) 1;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      text-align: center;
+      background: var(--surface);
+      padding: 40px 24px 32px;
+      margin: 0 -24px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hdr__eye  { color: var(--red); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 10px; }
+    .hdr h1    { font-size: 26px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .hdr__sub  { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .badges    { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .badge     { display: inline-flex; align-items: center; gap: 5px; background: rgba(212,5,17,.08); border: 1px solid rgba(212,5,17,.22); color: var(--red); padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+
+    /* ── Section ── */
+    .section { max-width: 1280px; margin: 0 auto 44px; }
+    .section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.8px; color: var(--red); margin-bottom: 18px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: rgba(212,5,17,.18); }
+
+    /* ── Before / After ── */
+    .story { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media(max-width:680px){ .story { grid-template-columns: 1fr; } }
+    .story-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; }
+    .story-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 3px; color: #fff; margin-bottom: 12px; letter-spacing: .06em; }
+    .story-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .story-body  { font-size: 13px; color: var(--muted); line-height: 1.65; margin-bottom: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag  { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: rgba(212,5,17,.1); color: var(--red); border: 1px solid rgba(212,5,17,.2); }
+
+    /* ── Bootstrap phases ── */
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+    .legend-dot  { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+    .timeline { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 10px; }
+
+    .phase-card { background: var(--surface); border: 1px solid var(--border); border-top-width: 2px; border-radius: 10px; padding: 14px; }
+    .phase-num   { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 5px; }
+    .phase-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 8px; line-height: 1.3; }
+    .phase-items { list-style: none; display: flex; flex-direction: column; gap: 3px; }
+    .phase-items li { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .phase-items li::before { content: ''; width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+
+    .p-infra    { border-top-color: var(--c-infra);    } .p-infra    li::before { background: var(--c-infra);    }
+    .p-network  { border-top-color: var(--c-network);  } .p-network  li::before { background: var(--c-network);  }
+    .p-security { border-top-color: var(--c-security); } .p-security li::before { background: var(--c-security); }
+    .p-platform { border-top-color: var(--c-platform); } .p-platform li::before { background: var(--c-platform); }
+    .p-observe  { border-top-color: var(--c-observe);  } .p-observe  li::before { background: var(--c-observe);  }
+    .p-app      { border-top-color: var(--c-app);      } .p-app      li::before { background: var(--c-app);      }
+    .p-portal   { border-top-color: var(--c-portal);   } .p-portal   li::before { background: var(--c-portal);   }
+    .p-gitops   { border-top-color: var(--c-gitops);   } .p-gitops   li::before { background: var(--c-gitops);   }
+
+    /* ── Architecture ── */
+    .arch { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; }
+    .host-box { border: 1.5px dashed var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+    .host-lbl  { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 14px; }
+
+    .layer { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+    .layer-lbl { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); min-width: 26px; display: flex; align-items: center; justify-content: center; }
+    .layer-content { flex: 1; display: flex; gap: 8px; flex-wrap: wrap; }
+    .connector { border-left: 1.5px solid var(--border); margin-left: 38px; height: 10px; }
+
+    .component { border-radius: 8px; padding: 10px 13px; font-size: 11.5px; font-weight: 600; display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 110px; border: 1px solid; }
+    .component .icon { font-size: 18px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
+    .component .name { line-height: 1.35; }
+    .component .sub  { font-size: 10px; font-weight: 400; opacity: .65; display: block; margin-top: 2px; }
+
+    .c-infra    { background: rgba(34,197,94,.08);  border-color: rgba(34,197,94,.25);  color: #15803D; }
+    .c-network  { background: rgba(59,130,246,.08); border-color: rgba(59,130,246,.25); color: #1D4ED8; }
+    .c-security { background: rgba(168,85,247,.08); border-color: rgba(168,85,247,.25); color: #7E22CE; }
+    .c-platform { background: rgba(234,179,8,.10);  border-color: rgba(234,179,8,.30);  color: #92400E; }
+    .c-observe  { background: rgba(6,182,212,.08);  border-color: rgba(6,182,212,.25);  color: #0E7490; }
+    .c-app      { background: rgba(249,115,22,.08); border-color: rgba(249,115,22,.25); color: #C2410C; }
+    .c-portal   { background: rgba(16,185,129,.08); border-color: rgba(16,185,129,.25); color: #065F46; }
+    .c-gitops   { background: rgba(139,92,246,.08); border-color: rgba(139,92,246,.25); color: #5B21B6; }
+
+    /* ── URLs ── */
+    .urls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 8px; }
+    .url-card  { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 11px 15px; display: flex; align-items: center; gap: 12px; }
+    .url-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .url-name  { font-size: 12px; font-weight: 600; color: var(--text); }
+    .url-addr  { font-size: 10.5px; color: var(--muted); font-family: 'SF Mono','Fira Code',monospace; margin-top: 2px; }
+
+    /* ── Demo script ── */
+    .script-grid { display: flex; flex-direction: column; gap: 8px; }
+    .script-step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; display: flex; align-items: flex-start; gap: 14px; }
+    .script-num  { font-size: 20px; font-weight: 900; color: var(--red); opacity: .35; font-family: 'SF Mono',monospace; line-height: 1; flex-shrink: 0; width: 32px; }
+    .script-main .title  { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .script-main .action { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 6px; }
+
+    /* ── Personas ── */
+    .personas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    @media(max-width:900px){ .personas { grid-template-columns: repeat(3,1fr); } }
+    @media(max-width:600px){ .personas { grid-template-columns: repeat(2,1fr); } }
+    .persona-card  { background: var(--surface); border: 1px solid var(--border); border-top-width: 3px; border-radius: 10px; padding: 18px 14px; text-align: center; }
+    .persona-icon  { font-size: 28px; margin-bottom: 8px; }
+    .persona-name  { font-size: 12px; font-weight: 700; color: var(--text); }
+    .persona-login { font-size: 10px; color: var(--muted); font-family: 'SF Mono','Fira Code',monospace; margin-top: 4px; }
+    .persona-access{ font-size: 10.5px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+
+    /* ── Day-2 Scripts ── */
+    .scripts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+    .script-card  { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; display: flex; align-items: flex-start; gap: 10px; }
+    .script-icon  { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .script-nm    { font-size: 11px; font-weight: 600; color: var(--text); font-family: 'SF Mono','Fira Code',monospace; }
+    .script-desc  { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Credentials table ── */
+    .cred-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .cred-table th { background: var(--surface2); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    .cred-table td { font-size: 12px; color: var(--text); padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .cred-table tr:last-child td { border-bottom: none; }
+    .cred-table code { font-family: 'SF Mono','Fira Code',monospace; font-size: 11px; color: var(--red); background: rgba(212,5,17,.07); padding: 1px 6px; border-radius: 3px; }
+
+    @media(max-width:768px){ .personas { grid-template-columns: repeat(2,1fr); } }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ════════════════════════════════════════════════════════════════ -->
+<div class="hdr">
+  <div class="hdr__eye">DHL · Infrastructure Interface Platform</div>
+  <h1>Demo Flow &amp; Architecture</h1>
+  <p class="hdr__sub">KIND Cluster (ipp-local) on macOS Apple Silicon · Kubernetes v1.32 · All services at *.ipp.local</p>
+  <div class="badges">
+    <span class="badge">19.5 Bootstrap Phases</span>
+    <span class="badge">Backstage IPP</span>
+    <span class="badge">IIP Service (Sole Git Writer)</span>
+    <span class="badge">Upbound Crossplane</span>
+    <span class="badge">Argo CD GitOps</span>
+    <span class="badge">Gitea (on-cluster Git)</span>
+    <span class="badge">Cilium + Hubble</span>
+    <span class="badge">SPIRE / SPIFFE</span>
+    <span class="badge">OPA / Kyverno</span>
+    <span class="badge">Prometheus + Grafana</span>
+    <span class="badge">OpenCost</span>
+    <span class="badge">AIOps LangGraph</span>
+    <span class="badge">KubeVirt</span>
+    <span class="badge">HashiCorp Vault</span>
+  </div>
+</div>
+
+<!-- ═══ BEFORE / AFTER ═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">What This Demo Shows</div>
+  <div class="story">
+
+    <div class="story-card">
+      <span class="story-badge" style="background:#D40511">BEFORE</span>
+      <div class="story-title">Days-to-weeks provisioning via three tools</div>
+      <p class="story-body">
+        IIP (the sole Git writer) writes tool-specific configs to Git. GitHub Actions fans out to VRA (OpenShift), Terraform (AKS), and Cloudify (Azure VMs) independently. IIP must aggregate status callbacks from each tool. No unified control plane. No live portal status.
+      </p>
+      <div class="tags">
+        <span class="tag">VRA</span>
+        <span class="tag">Terraform</span>
+        <span class="tag">Cloudify</span>
+        <span class="tag">GitHub Actions</span>
+        <span class="tag">IIP callbacks</span>
+      </div>
+    </div>
+
+    <div class="story-card">
+      <span class="story-badge" style="background:#1a7a2e">AFTER · Crossplane</span>
+      <div class="story-title">~10-minute provisioning via one control plane</div>
+      <p class="story-body">
+        IIP still writes to Git — but now a Crossplane Claim YAML to Gitea. Argo CD watches Gitea and syncs the Claim to Crossplane. Crossplane reconciles ComputeInstance + StorageVolume + VolumeAttachment. Status flows directly back to IPP via the Kubernetes API. No callbacks. No tool sprawl.
+      </p>
+      <div class="tags">
+        <span class="tag">Crossplane XRD</span>
+        <span class="tag">Claim YAML</span>
+        <span class="tag">Argo CD</span>
+        <span class="tag">Gitea</span>
+        <span class="tag">IIP Service</span>
+        <span class="tag">Direct status</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ BOOTSTRAP FLOW ════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">Bootstrap Flow — 19.5 Phases (make start)</div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Infrastructure</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Networking</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>Security</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>Platform</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Observability</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Applications</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>IIP Portal</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>GitOps / IIP Service</div>
+  </div>
+
+  <div class="timeline">
+
+    <div class="phase-card p-infra">
+      <div class="phase-num">Phase 1</div>
+      <div class="phase-title">Pre-flight Checks</div>
+      <ul class="phase-items">
+        <li>macOS + arm64 verified</li>
+        <li>Docker Desktop ≥ 32 GB</li>
+        <li>kubectl / kind / helm</li>
+        <li>jq / node / yarn</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-infra">
+      <div class="phase-num">Phase 2</div>
+      <div class="phase-title">KIND Cluster</div>
+      <ul class="phase-items">
+        <li>Create cluster: ipp-local</li>
+        <li>kindest/node:v1.32</li>
+        <li>etcd quota 8 GiB</li>
+        <li>Auto-compaction 1 h</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-infra">
+      <div class="phase-num">Phase 3</div>
+      <div class="phase-title">/etc/hosts</div>
+      <ul class="phase-items">
+        <li>backstage.ipp.local</li>
+        <li>argocd / grafana</li>
+        <li>prometheus / opencost</li>
+        <li>hubble / aiops / vault</li>
+        <li>gitea.ipp.local</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-network">
+      <div class="phase-num">Phase 4</div>
+      <div class="phase-title">Cilium CNI + Hubble</div>
+      <ul class="phase-items">
+        <li>Cilium (vxlan)</li>
+        <li>Hubble relay + UI</li>
+        <li>DNS / drop / flow visibility</li>
+        <li>MTU 1500 (KubeVirt compat)</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-network">
+      <div class="phase-num">Phase 5</div>
+      <div class="phase-title">Ingress-NGINX + RBAC</div>
+      <ul class="phase-items">
+        <li>ingress-nginx</li>
+        <li>externalIPs patch</li>
+        <li>Platform namespaces</li>
+        <li>Platform RBAC</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-security">
+      <div class="phase-num">Phase 6</div>
+      <div class="phase-title">SPIRE / SPIFFE</div>
+      <ul class="phase-items">
+        <li>SPIRE server + agent</li>
+        <li>Trust: ipp-demo.local</li>
+        <li>SPIFFE CSI driver</li>
+        <li>Workload registrations</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-platform">
+      <div class="phase-num">Phase 7</div>
+      <div class="phase-title">Argo CD</div>
+      <ul class="phase-items">
+        <li>Argo CD v2.10+</li>
+        <li>argocd.ipp.local</li>
+        <li>Admin pw: argocd-demo-local-2024</li>
+        <li>API token → Backstage</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-platform">
+      <div class="phase-num">Phase 8</div>
+      <div class="phase-title">Upbound Crossplane</div>
+      <ul class="phase-items">
+        <li>UXP / Crossplane</li>
+        <li>provider-kubernetes</li>
+        <li>provider-helm</li>
+        <li>XRDs + Compositions</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-security">
+      <div class="phase-num">Phase 9</div>
+      <div class="phase-title">Policy Engines</div>
+      <ul class="phase-items">
+        <li>OPA Gatekeeper</li>
+        <li>Kyverno</li>
+        <li>Constraint templates</li>
+        <li>Kyverno policies</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-observe">
+      <div class="phase-num">Phase 10</div>
+      <div class="phase-title">Prometheus + Grafana</div>
+      <ul class="phase-items">
+        <li>kube-prometheus-stack</li>
+        <li>grafana.ipp.local</li>
+        <li>prometheus.ipp.local</li>
+        <li>IPP Full Telemetry dashboard</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-observe">
+      <div class="phase-num">Phase 11</div>
+      <div class="phase-title">OpenCost</div>
+      <ul class="phase-items">
+        <li>OpenCost</li>
+        <li>opencost.ipp.local</li>
+        <li>Per-namespace cost allocation</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-security">
+      <div class="phase-num">Phase 11b</div>
+      <div class="phase-title">Vault Secrets</div>
+      <ul class="phase-items">
+        <li>HashiCorp Vault dev mode</li>
+        <li>vault.ipp.local</li>
+        <li>Root token: root</li>
+        <li>ExternalSecrets sync</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-app">
+      <div class="phase-num">Phase 11c</div>
+      <div class="phase-title">KubeVirt</div>
+      <ul class="phase-items">
+        <li>KubeVirt software emulation</li>
+        <li>VMI = Managed Resource</li>
+        <li>VMApp XRD + Composition</li>
+        <li>ARM64 mpx-strip fix applied</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-app">
+      <div class="phase-num">Phase 12</div>
+      <div class="phase-title">App Images</div>
+      <ul class="phase-items">
+        <li>employee-frontend arm64</li>
+        <li>employee-backend arm64</li>
+        <li>kind load → ipp-local</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-app">
+      <div class="phase-num">Phase 13</div>
+      <div class="phase-title">Employee Portal</div>
+      <ul class="phase-items">
+        <li>Frontend + Backend</li>
+        <li>PostgreSQL</li>
+        <li>employee.ipp.local</li>
+        <li>Cilium network policy</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-app">
+      <div class="phase-num">Phase 14</div>
+      <div class="phase-title">AIOps Engine</div>
+      <ul class="phase-items">
+        <li>LangGraph multi-agent</li>
+        <li>Manager + 5 Worker agents</li>
+        <li>aiops.ipp.local</li>
+        <li>Ollama / LangSmith backend</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-platform">
+      <div class="phase-num">Phase 15</div>
+      <div class="phase-title">Crossplane Claims</div>
+      <ul class="phase-items">
+        <li>ThreeTierAppClaim applied</li>
+        <li>employee-portal claim</li>
+        <li>Provider health checks</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-portal">
+      <div class="phase-num">Phase 16</div>
+      <div class="phase-title">Backstage IPP</div>
+      <ul class="phase-items">
+        <li>TypeScript build + bundle</li>
+        <li>backstage:latest image</li>
+        <li>backstage.ipp.local</li>
+        <li>Catalog + all plugins loaded</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-platform">
+      <div class="phase-num">Phase 17</div>
+      <div class="phase-title">Argo CD Apps</div>
+      <ul class="phase-items">
+        <li>Argo CD projects created</li>
+        <li>App manifests applied</li>
+        <li>Gitea repo wired</li>
+        <li>ApplicationSet configured</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-infra">
+      <div class="phase-num">Phase 18–19</div>
+      <div class="phase-title">Git + Validation</div>
+      <ul class="phase-items">
+        <li>Gitea push: claims repo</li>
+        <li>validate-demo.sh smoke tests</li>
+        <li>All components green</li>
+      </ul>
+    </div>
+
+    <div class="phase-card p-gitops">
+      <div class="phase-num">Phase 19.5</div>
+      <div class="phase-title">GitOps Stack (IIP Service)</div>
+      <ul class="phase-items">
+        <li>Gitea server deployed</li>
+        <li>Bot user + token created</li>
+        <li>IIP Service image built</li>
+        <li>Claims ApplicationSet live</li>
+        <li>conftest OPA policy wired</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ ARCHITECTURE STACK ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">Platform Architecture — Component Stack</div>
+  <div class="arch">
+
+    <div class="host-box">
+      <div class="host-lbl">macOS Apple Silicon (M5 Pro/Max · 48 GB RAM) · Docker Desktop</div>
+
+      <div class="host-box">
+        <div class="host-lbl" style="color:var(--red);">KIND Cluster: ipp-local · Kubernetes v1.32 · etcd 8 GiB · 1 control-plane + 2 workers</div>
+
+        <!-- Portal -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#6ee7b7;">Portal</div>
+          <div class="layer-content">
+            <div class="component c-portal">
+              <div class="icon">🧩</div>
+              <div class="name">Backstage IPP
+                <span class="sub">backstage.ipp.local · 5 Personas · Catalog · Templates · Onboarding</span>
+              </div>
+            </div>
+            <div class="component c-portal" style="flex:2;">
+              <div class="icon">🔌</div>
+              <div class="name">Plugins: Kubernetes · Argo CD · Crossplane · OpenCost · AIOps · Security · Infra Onboarding
+                <span class="sub">Personas: Developer · Platform Engineer · Operations · Security Analyst · Infrastructure Provider</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- GitOps / IIP -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#c4b5fd;">GitOps</div>
+          <div class="layer-content">
+            <div class="component c-gitops">
+              <div class="icon">🐱</div>
+              <div class="name">Gitea (on-cluster Git)
+                <span class="sub">gitea.ipp.local · ipp-automation-bot · claims repo = GitOps source</span>
+              </div>
+            </div>
+            <div class="component c-gitops">
+              <div class="icon">⚙️</div>
+              <div class="name">IIP Service (Sole Git Writer)
+                <span class="sub">Validates Claim · writes Claim YAML to Gitea · conftest OPA policy</span>
+              </div>
+            </div>
+            <div class="component c-gitops">
+              <div class="icon">🔄</div>
+              <div class="name">Argo CD
+                <span class="sub">argocd.ipp.local · ApplicationSet · watches Gitea · syncs Claims</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Platform -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#fde047;">Platform</div>
+          <div class="layer-content">
+            <div class="component c-platform">
+              <div class="icon">♻️</div>
+              <div class="name">Upbound Crossplane
+                <span class="sub">XRDs · Compositions · Claims → XR → MRs (ComputeInstance + StorageVolume + VolumeAttachment)</span>
+              </div>
+            </div>
+            <div class="component c-platform">
+              <div class="icon">🧪</div>
+              <div class="name">KubeVirt
+                <span class="sub">VMI = Managed Resource · Crossplane Composition · software emulation arm64</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Apps -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#fdba74;">Apps</div>
+          <div class="layer-content">
+            <div class="component c-app">
+              <div class="icon">👤</div>
+              <div class="name">Employee Portal
+                <span class="sub">Frontend + Backend + PostgreSQL · employee.ipp.local</span>
+              </div>
+            </div>
+            <div class="component c-app">
+              <div class="icon">🤖</div>
+              <div class="name">AIOps Engine
+                <span class="sub">LangGraph · Manager + 5 Workers · aiops.ipp.local · Ollama backend</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Observability -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#67e8f9;">Observe</div>
+          <div class="layer-content">
+            <div class="component c-observe">
+              <div class="icon">📊</div>
+              <div class="name">Prometheus
+                <span class="sub">kube-prometheus-stack · prometheus.ipp.local</span>
+              </div>
+            </div>
+            <div class="component c-observe">
+              <div class="icon">📈</div>
+              <div class="name">Grafana
+                <span class="sub">IPP Full Telemetry dashboard · grafana.ipp.local</span>
+              </div>
+            </div>
+            <div class="component c-observe">
+              <div class="icon">💰</div>
+              <div class="name">OpenCost
+                <span class="sub">Cost allocation per namespace · opencost.ipp.local</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Security -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#c4b5fd;">Security</div>
+          <div class="layer-content">
+            <div class="component c-security">
+              <div class="icon">🔐</div>
+              <div class="name">SPIRE / SPIFFE
+                <span class="sub">Workload X.509 SVIDs · trust: ipp-demo.local · CSI driver</span>
+              </div>
+            </div>
+            <div class="component c-security">
+              <div class="icon">⚖️</div>
+              <div class="name">OPA Gatekeeper
+                <span class="sub">Admission constraints · conftest in IIP Service</span>
+              </div>
+            </div>
+            <div class="component c-security">
+              <div class="icon">🛡️</div>
+              <div class="name">Kyverno
+                <span class="sub">Policy engine · NIS2 compliance rules</span>
+              </div>
+            </div>
+            <div class="component c-security">
+              <div class="icon">🔑</div>
+              <div class="name">HashiCorp Vault
+                <span class="sub">Dev mode · vault.ipp.local · root token: root</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Networking -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#93c5fd;">Network</div>
+          <div class="layer-content">
+            <div class="component c-network">
+              <div class="icon">🌐</div>
+              <div class="name">Cilium CNI
+                <span class="sub">vxlan · MTU 1500 · eBPF L3/L4/L7 policies · zero-trust</span>
+              </div>
+            </div>
+            <div class="component c-network">
+              <div class="icon">🔭</div>
+              <div class="name">Hubble
+                <span class="sub">Flow observability · service map · hubble.ipp.local</span>
+              </div>
+            </div>
+            <div class="component c-network">
+              <div class="icon">🚦</div>
+              <div class="name">Ingress-NGINX
+                <span class="sub">externalIPs patch · *.ipp.local routing</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <!-- Infra -->
+        <div class="layer">
+          <div class="layer-lbl" style="color:#86efac;">Infra</div>
+          <div class="layer-content">
+            <div class="component c-infra">
+              <div class="icon">☸️</div>
+              <div class="name">KIND Nodes (k8s v1.32)
+                <span class="sub">1 control-plane + 2 workers</span>
+              </div>
+            </div>
+            <div class="component c-infra">
+              <div class="icon">🗄️</div>
+              <div class="name">etcd
+                <span class="sub">8 GiB quota · 1 h auto-compaction</span>
+              </div>
+            </div>
+            <div class="component c-infra">
+              <div class="icon">📦</div>
+              <div class="name">Namespaces + RBAC
+                <span class="sub">backstage · argocd · monitoring · spire · crossplane-system · gitea · ipp-system ···</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /KIND -->
+
+      <!-- Gitea as external-ish -->
+      <div class="layer" style="margin-top:12px;">
+        <div class="layer-lbl" style="color:#c4b5fd;">Git</div>
+        <div class="layer-content">
+          <div class="component c-gitops">
+            <div class="icon">🐱</div>
+            <div class="name">Gitea — on-cluster GitOps source
+              <span class="sub">gitea.ipp.local · ipp-automation-bot writes Claims · Argo CD reads · immutable audit trail</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /macOS host -->
+  </div>
+</div>
+
+<!-- ═══ LIVE DEMO SCRIPT ══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">10-Step Live Demo Script</div>
+  <div class="script-grid">
+
+    <div class="script-step">
+      <div class="script-num">01</div>
+      <div class="script-main">
+        <div class="title">Land on the Portal</div>
+        <div class="action">Open <code>backstage.ipp.local</code> — show the landing page: platform health stats, 5 persona tiles, Before/After narrative.</div>
+        <div class="tags"><span class="tag">backstage.ipp.local</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">02</div>
+      <div class="script-main">
+        <div class="title">Log in as Developer</div>
+        <div class="action">Click Developer → login as <code>dev.user / Dev@IPP2025</code>. Portal re-themes: Catalog, Create, Onboard App, My Resources.</div>
+        <div class="tags"><span class="tag">dev.user</span><span class="tag">Dev@IPP2025</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">03</div>
+      <div class="script-main">
+        <div class="title">Browse the Service Catalog</div>
+        <div class="action">Open Catalog → ThreeTierApp entity → Kubernetes tab. Show live pod status pulled from the cluster via the K8s Backstage plugin.</div>
+        <div class="tags"><span class="tag">Catalog</span><span class="tag">K8s Plugin</span><span class="tag">Crossplane</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">04</div>
+      <div class="script-main">
+        <div class="title">Submit an Infrastructure Claim via IIP</div>
+        <div class="action">Create → "Private Cloud VM" template. Fill name, team, size. Submit. IPP triggers the IIP Service which validates the Claim, runs conftest OPA policy, then pushes a PrivateCloudVM Claim YAML to Gitea as ipp-automation-bot.</div>
+        <div class="tags"><span class="tag">IIP Service</span><span class="tag">Gitea</span><span class="tag">Claim YAML</span><span class="tag">conftest</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">05</div>
+      <div class="script-main">
+        <div class="title">Watch Argo CD sync the Claim</div>
+        <div class="action">Open <code>argocd.ipp.local</code> (admin / argocd-demo-local-2024). Watch the ApplicationSet-generated Application go OutOfSync → Synced → Healthy as Crossplane picks up the Claim.</div>
+        <div class="tags"><span class="tag">argocd.ipp.local</span><span class="tag">ApplicationSet</span><span class="tag">Gitea</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">06</div>
+      <div class="script-main">
+        <div class="title">Platform Engineer: Crossplane Dashboard</div>
+        <div class="action">Switch to <code>platform.engineer / Platform@IPP2025</code>. Open Crossplane → show XRDs, Compositions, live Claim status, Managed Resource health: ComputeInstance, StorageVolume, VolumeAttachment — all READY.</div>
+        <div class="tags"><span class="tag">platform.engineer</span><span class="tag">XRD</span><span class="tag">Composition</span><span class="tag">MRs</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">07</div>
+      <div class="script-main">
+        <div class="title">Observability: Grafana + Hubble</div>
+        <div class="action">Operations persona → open <code>grafana.ipp.local</code> (admin / grafana-demo-local-2024). Show IPP Full Telemetry dashboard: Crossplane reconcile latency, pod health, Hubble network flow volume. Open <code>hubble.ipp.local</code> for the live service map.</div>
+        <div class="tags"><span class="tag">grafana.ipp.local</span><span class="tag">hubble.ipp.local</span><span class="tag">Prometheus</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">08</div>
+      <div class="script-main">
+        <div class="title">AIOps — Trigger &amp; Auto-Remediate an Incident</div>
+        <div class="action">Run <code>simulate-crashloop.sh</code> in a terminal. Switch to Agent Command Center. Watch the LangGraph multi-agent system (Manager + 5 Workers) detect the CrashLoopBackOff, root-cause it, propose a remediation, and apply it on approval.</div>
+        <div class="tags"><span class="tag">AIOps</span><span class="tag">LangGraph</span><span class="tag">Auto-Remediation</span><span class="tag">simulate-crashloop.sh</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">09</div>
+      <div class="script-main">
+        <div class="title">Security: Policy, Identity, Network</div>
+        <div class="action">Log in as <code>security.analyst / Security@IPP2025</code>. Security dashboard → OPA/Kyverno policy reports, SPIRE workload SVIDs, Cilium network policy verdicts. Run <code>simulate-network-deny.sh</code> to trigger a Hubble policy drop and show it live.</div>
+        <div class="tags"><span class="tag">security.analyst</span><span class="tag">OPA</span><span class="tag">Kyverno</span><span class="tag">SPIRE</span><span class="tag">Cilium</span></div>
+      </div>
+    </div>
+
+    <div class="script-step">
+      <div class="script-num">10</div>
+      <div class="script-main">
+        <div class="title">FinOps Showback</div>
+        <div class="action">Log in as <code>tech.provider / Provider@IPP2025</code>. Show FinOps Charge Visibility → per-team cost allocation from OpenCost, spend forecast, and the cost anomaly signal fed into the AIOps event stream.</div>
+        <div class="tags"><span class="tag">tech.provider</span><span class="tag">OpenCost</span><span class="tag">opencost.ipp.local</span><span class="tag">FinOps</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ PLATFORM URLS ═════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">Platform Access URLs</div>
+  <div class="urls-grid">
+    <div class="url-card"><div class="url-dot" style="background:#10b981;"></div><div><div class="url-name">Backstage IPP</div><div class="url-addr">http://backstage.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#8b5cf6;"></div><div><div class="url-name">Argo CD</div><div class="url-addr">http://argocd.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#10b981;"></div><div><div class="url-name">Gitea (on-cluster Git)</div><div class="url-addr">http://gitea.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#06b6d4;"></div><div><div class="url-name">Grafana</div><div class="url-addr">http://grafana.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#06b6d4;"></div><div><div class="url-name">Prometheus</div><div class="url-addr">http://prometheus.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#06b6d4;"></div><div><div class="url-name">OpenCost</div><div class="url-addr">http://opencost.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#3b82f6;"></div><div><div class="url-name">Hubble UI</div><div class="url-addr">http://hubble.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#f97316;"></div><div><div class="url-name">AIOps Engine</div><div class="url-addr">http://aiops.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#f97316;"></div><div><div class="url-name">Employee Portal</div><div class="url-addr">http://employee.ipp.local</div></div></div>
+    <div class="url-card"><div class="url-dot" style="background:#a855f7;"></div><div><div class="url-name">Vault</div><div class="url-addr">http://vault.ipp.local · localhost:8200</div></div></div>
+  </div>
+</div>
+
+<!-- ═══ CREDENTIALS ════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">All Demo Credentials</div>
+  <table class="cred-table">
+    <thead>
+      <tr><th>System</th><th>Username / Login</th><th>Password / Token</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Backstage — Developer</td><td><code>dev.user</code></td><td><code>Dev@IPP2025</code></td><td>Catalog · Create · AIOps Chat</td></tr>
+      <tr><td>Backstage — Platform Engineer</td><td><code>platform.engineer</code></td><td><code>Platform@IPP2025</code></td><td>Crossplane · GitOps · Day 2 Ops</td></tr>
+      <tr><td>Backstage — Operations</td><td><code>ops.support</code></td><td><code>Ops@IPP2025</code></td><td>Grafana · AIOps · Autonomous Ops</td></tr>
+      <tr><td>Backstage — Security Analyst</td><td><code>security.analyst</code></td><td><code>Security@IPP2025</code></td><td>OPA · Kyverno · SPIRE · Hubble</td></tr>
+      <tr><td>Backstage — Infrastructure Provider</td><td><code>tech.provider</code></td><td><code>Provider@IPP2025</code></td><td>FinOps · OpenCost · Compositions</td></tr>
+      <tr><td>Argo CD</td><td><code>admin</code></td><td><code>argocd-demo-local-2024</code></td><td>argocd.ipp.local</td></tr>
+      <tr><td>Grafana</td><td><code>admin</code></td><td><code>grafana-demo-local-2024</code></td><td>grafana.ipp.local</td></tr>
+      <tr><td>Gitea</td><td><code>gitea-admin</code></td><td><code>admin-demo-2024</code></td><td>gitea.ipp.local · ipp-automation-bot writes Claims</td></tr>
+      <tr><td>HashiCorp Vault</td><td>—</td><td><code>root</code></td><td>vault.ipp.local · dev mode</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ PERSONAS ══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">5 Demo Personas</div>
+  <div class="personas">
+    <div class="persona-card" style="border-top-color:#5b9bd5;">
+      <div class="persona-icon">👩‍💻</div>
+      <div class="persona-name">Developer</div>
+      <div class="persona-login">dev.user · Dev@IPP2025</div>
+      <div class="persona-access">Service Catalog · Create (IIP Claim) · Onboard App · My Resources · AIOps Chat</div>
+    </div>
+    <div class="persona-card" style="border-top-color:#D40511;">
+      <div class="persona-icon">⚙️</div>
+      <div class="persona-name">Platform Engineer</div>
+      <div class="persona-login">platform.engineer · Platform@IPP2025</div>
+      <div class="persona-access">Crossplane XRDs · Compositions · GitOps · Day 2 Ops · Full cluster admin</div>
+    </div>
+    <div class="persona-card" style="border-top-color:#8b5cf6;">
+      <div class="persona-icon">🔧</div>
+      <div class="persona-name">Operations</div>
+      <div class="persona-login">ops.support · Ops@IPP2025</div>
+      <div class="persona-access">Grafana · Prometheus · Argo CD · AIOps incident response · Autonomous Ops</div>
+    </div>
+    <div class="persona-card" style="border-top-color:#1a7a2e;">
+      <div class="persona-icon">🔒</div>
+      <div class="persona-name">Security Analyst</div>
+      <div class="persona-login">security.analyst · Security@IPP2025</div>
+      <div class="persona-access">OPA / Kyverno · SPIRE identities · Cilium / Hubble flows · Vault secrets</div>
+    </div>
+    <div class="persona-card" style="border-top-color:#e07c00;">
+      <div class="persona-icon">☁️</div>
+      <div class="persona-name">Infrastructure Provider</div>
+      <div class="persona-login">tech.provider · Provider@IPP2025</div>
+      <div class="persona-access">OpenCost · FinOps Charge Visibility · Private cloud Composition management</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DAY-2 SCRIPTS ═════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">Day-2 Operations Scripts (make target or ./scripts/)</div>
+  <div class="scripts-grid">
+    <div class="script-card"><div class="script-icon">📋</div><div><div class="script-nm">validate-demo.sh</div><div class="script-desc">Smoke-test all platform components</div></div></div>
+    <div class="script-card"><div class="script-icon">🔁</div><div><div class="script-nm">reset-demo.sh</div><div class="script-desc">Reset demo state to clean baseline</div></div></div>
+    <div class="script-card"><div class="script-icon">💣</div><div><div class="script-nm">destroy.sh</div><div class="script-desc">Delete KIND cluster (make stop)</div></div></div>
+    <div class="script-card"><div class="script-icon">📊</div><div><div class="script-nm">make validate</div><div class="script-desc">Platform health check (kubectl + argocd)</div></div></div>
+    <div class="script-card"><div class="script-icon">📈</div><div><div class="script-nm">make scale-up</div><div class="script-desc">Scale employee portal frontend to 3 replicas</div></div></div>
+    <div class="script-card"><div class="script-icon">🚀</div><div><div class="script-nm">make update-backstage</div><div class="script-desc">Rebuild + redeploy Backstage (idempotent)</div></div></div>
+    <div class="script-card"><div class="script-icon">💥</div><div><div class="script-nm">simulate-crashloop.sh</div><div class="script-desc">Trigger CrashLoopBackOff for AIOps detection demo</div></div></div>
+    <div class="script-card"><div class="script-icon">🚫</div><div><div class="script-nm">simulate-network-deny.sh</div><div class="script-desc">Trigger Cilium policy deny for Hubble flow demo</div></div></div>
+    <div class="script-card"><div class="script-icon">🗄️</div><div><div class="script-nm">make gitops-setup</div><div class="script-desc">Deploy / re-deploy Gitea + IIP Service + ApplicationSet</div></div></div>
+    <div class="script-card"><div class="script-icon">📡</div><div><div class="script-nm">make gitops-status</div><div class="script-desc">Show Gitea + IIP Service + Argo CD claims status</div></div></div>
+  </div>
+</div>
+
+<!-- ═══ FOOTER ════════════════════════════════════════════════════════════════ -->
+<div style="text-align:center; margin-top:32px; padding-top:20px; border-top:1px solid var(--border);">
+  <p style="font-size:11px; color:var(--muted);">
+    IIP — Infrastructure Interface Platform &nbsp;·&nbsp; KIND cluster <code style="font-family:monospace;">ipp-local</code> on macOS Apple Silicon &nbsp;·&nbsp; All services at *.ipp.local
+    &nbsp;·&nbsp; Argo CD: <code style="font-family:monospace;">argocd-demo-local-2024</code>
+    &nbsp;·&nbsp; Grafana: <code style="font-family:monospace;">grafana-demo-local-2024</code>
+    &nbsp;·&nbsp; Gitea: <code style="font-family:monospace;">admin-demo-2024</code>
+    &nbsp;·&nbsp; Vault: <code style="font-family:monospace;">root</code>
+  </p>
+</div>
+
+</body>
+</html>

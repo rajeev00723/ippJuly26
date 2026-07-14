@@ -1,0 +1,27 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPNetworkClaim
+metadata:
+  name: demo-vnet-01
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZKH82D
+    iip.dhl.com/provisioning-id: 01KVZKH82DSJ2R8J2668YYQ0CJ
+    iip.dhl.com/requested-by: amitabh.sharan@dhl.com
+    iip.dhl.com/cost-center: CC-9003
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-infra
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T14:39:21.678Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZKH82DSJ2R8J2668YYQ0CJ
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    networkName: demo-vnet-01
+    targetProvider: azure
+    environment: dev
+    cidr: 10.10.0.0/16
+    location: westeurope
+    ownerTeam: bu-infra
+    requestedBy: amitabh.sharan@dhl.com
+    costCenter: CC-9003

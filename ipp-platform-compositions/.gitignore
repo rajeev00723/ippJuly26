@@ -1,0 +1,18 @@
+# Backup artifacts
+*.bak
+*.orig
+
+# Sensitive files
+kubeconfig*
+*.secret.yaml
+*-secret.yaml
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Helm chart cache
+charts/

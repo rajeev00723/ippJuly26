@@ -1,0 +1,42 @@
+# Node / Backstage
+node_modules/
+dist/
+dist-types/
+.cache/
+.yarn/cache
+*.tsbuildinfo
+
+# Python / AIOps
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+*.bak
+*.orig
+
+# Environment files — never commit
+.env
+*.env
+
+# Sensitive files
+kubeconfig*
+*.secret.yaml
+*-secret.yaml
+*.pem
+*.key
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Go binaries (employee-portal)
+apps/employee-portal/backend/employee-portal
+apps/employee-portal/backend/*.test

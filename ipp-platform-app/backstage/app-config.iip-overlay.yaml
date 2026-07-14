@@ -1,0 +1,19 @@
+# IIP integration overlay — applied on top of app-config.yaml base.
+# Per DHL Backstage Strategy (Approach G): overlays are configuration-only,
+# no core Backstage files are modified.
+# Usage: yarn dev --config app-config.yaml --config app-config.iip-overlay.yaml
+
+proxy:
+  endpoints:
+    /iip:
+      target: http://localhost:3001
+      changeOrigin: true
+      pathRewrite:
+        '^/api/proxy/iip': ''
+      headers:
+        X-IIP-Source: backstage-scaffolder
+
+# Backstage scaffolder custom actions are registered via the IIP backend plugin.
+# The templates in ipp-platform-legacy/scripts/backstage/catalog/ call:
+#   action: http:backstage:request
+#   path: /api/proxy/iip/api/provision

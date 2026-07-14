@@ -1,0 +1,147 @@
+## AIOps Engine – Namespace, Deployment, Service, and Ingress
+## Apply: kubectl apply -f aiops/manifests/aiops-deployment.yaml
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiops
+  labels:
+    app.kubernetes.io/part-of: idp-platform
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiops-engine
+  template:
+    metadata:
+      labels:
+        app: aiops-engine
+        app.kubernetes.io/name: aiops-engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: aiops-engine
+      containers:
+        - name: aiops-engine
+          image: aiops-engine:latest
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+            - name: ARGOCD_URL
+              value: "http://argocd-server.argocd.svc.cluster.local:80"
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: argocd-aiops-token
+                  key: token
+                  optional: true
+            - name: OPENCOST_URL
+              value: "http://opencost.opencost.svc.cluster.local:9090"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+      securityContext:
+        fsGroup: 1000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: aiops-engine
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiops-engine-ingress
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: "4m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aiops.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiops-engine
+                port:
+                  number: 8000
+    - host: aiops.dpcs.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiops-engine
+                port:
+                  number: 8000

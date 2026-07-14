@@ -1,0 +1,574 @@
+# Platform RBAC
+# Defines four personas with appropriate access levels:
+#   1. platform-engineer  – broad read + limited write across the cluster
+#   2. developer          – namespace-scoped create/read for their own namespace
+#   3. operations         – read-only cluster-wide view
+#   4. security           – read-only cluster-wide + policy CRD access
+
+# =================================================================
+# 1. PLATFORM ENGINEER
+# Needs: read all resources, write deployments/services/configmaps,
+#        manage Crossplane claims, read secrets (not data), manage RBAC
+# =================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-engineer
+  labels:
+    platform.iip.com/role: platform-engineer
+    rbac.authorization.k8s.io/aggregate-to-admin: "false"
+  annotations:
+    platform.iip.com/description: "Platform engineering role - broad read and limited write access"
+rules:
+  # Core resources - read
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - persistentvolumes
+      - resourcequotas
+      - limitranges
+      - serviceaccounts
+      - services
+      - endpoints
+      - pods
+      - pods/log
+      - pods/status
+      - configmaps
+      - events
+    verbs: ["get", "list", "watch"]
+
+  # Core resources - write (namespace-scoped operations)
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - services
+      - serviceaccounts
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Secrets - read metadata only (not data) for security
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs: ["get", "list", "watch"]
+
+  # Apps - read all, write deployments/statefulsets
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - replicasets
+      - daemonsets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Batch jobs
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Networking
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - ingressclasses
+      - networkpolicies
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Autoscaling
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Policy
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Storage
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+      - persistentvolumes
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: [""]
+    resources:
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # RBAC - read + manage roles within namespaces
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+
+  # Crossplane composite resources and claims
+  - apiGroups: ["platform.iip.com"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources:
+      - compositeresourcedefinitions
+      - compositions
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["pkg.crossplane.io"]
+    resources:
+      - providers
+      - configurations
+      - functions
+      - providerrevisions
+    verbs: ["get", "list", "watch"]
+
+  # ArgoCD applications (read only - changes via GitOps)
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - appprojects
+      - applicationsets
+    verbs: ["get", "list", "watch"]
+
+  # Cilium network policies
+  - apiGroups: ["cilium.io"]
+    resources:
+      - ciliumnetworkpolicies
+      - ciliumclusterwidenetworkpolicies
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-engineer-binding
+  labels:
+    platform.iip.com/role: platform-engineer
+subjects:
+  - kind: Group
+    name: platform-engineers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: platform-engineer-sa
+    namespace: platform
+roleRef:
+  kind: ClusterRole
+  name: platform-engineer
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# =================================================================
+# 2. DEVELOPER
+# Namespace-scoped: create/read deployments, services, configmaps,
+# read pods/logs. No secrets access. No cluster-scoped resources.
+# =================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: developer
+  labels:
+    platform.iip.com/role: developer
+  annotations:
+    platform.iip.com/description: "Developer role - namespace-scoped create/read for application resources"
+rules:
+  # Read their own namespace metadata
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs: ["get", "list"]
+
+  # Core workload resources
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - pods/portforward
+      - services
+      - endpoints
+      - configmaps
+      - serviceaccounts
+      - events
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Deployments and replicasets
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Ingress
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # PVCs
+  - apiGroups: [""]
+    resources:
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create"]
+
+  # Crossplane claims in their namespace
+  - apiGroups: ["platform.iip.com"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # HPA
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+    verbs: ["get", "list"]
+
+  # Batch
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# Developers get this role bound per-namespace (not cluster-wide).
+# Example binding for employee-portal namespace:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-binding
+  namespace: employee-portal
+  labels:
+    platform.iip.com/role: developer
+subjects:
+  - kind: Group
+    name: developers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: employee-platform-developers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: developer
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# =================================================================
+# 3. OPERATIONS
+# Read-only cluster-wide: all workloads, namespaces, events,
+# nodes, metrics. No write permissions.
+# =================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: operations
+  labels:
+    platform.iip.com/role: operations
+  annotations:
+    platform.iip.com/description: "Operations role - read-only cluster-wide access for SRE/ops teams"
+rules:
+  # All core resources - read only
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - nodes/metrics
+      - nodes/status
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - endpoints
+      - configmaps
+      - events
+      - resourcequotas
+      - limitranges
+      - persistentvolumes
+      - persistentvolumeclaims
+      - serviceaccounts
+      - replicationcontrollers
+    verbs: ["get", "list", "watch"]
+
+  # Apps - read only
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - replicasets
+      - daemonsets
+      - controllerrevisions
+    verbs: ["get", "list", "watch"]
+
+  # Batch - read only
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+
+  # Networking - read only
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - ingressclasses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  # Storage - read only
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+      - volumeattachments
+    verbs: ["get", "list", "watch"]
+
+  # Autoscaling - read only
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+
+  # Policy - read only
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+
+  # RBAC - read only
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+
+  # Crossplane - read only
+  - apiGroups: ["platform.iip.com"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # ArgoCD - read only
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - appprojects
+    verbs: ["get", "list", "watch"]
+
+  # Cilium - read only
+  - apiGroups: ["cilium.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # Metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
+
+  # CRDs - read only (useful for troubleshooting)
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources:
+      - customresourcedefinitions
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: operations-binding
+  labels:
+    platform.iip.com/role: operations
+subjects:
+  - kind: Group
+    name: operations
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: sre-team
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: operations
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# =================================================================
+# 4. SECURITY
+# Read-only cluster-wide + full read/write of policy CRDs
+# (Gatekeeper ConstraintTemplates, Kyverno Policies, Cilium policies)
+# =================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: security
+  labels:
+    platform.iip.com/role: security
+  annotations:
+    platform.iip.com/description: "Security role - read-only cluster access + policy CRD management"
+rules:
+  # All core resources - read only (same as operations base)
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - endpoints
+      - configmaps
+      - events
+      - resourcequotas
+      - limitranges
+      - persistentvolumes
+      - persistentvolumeclaims
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+
+  # Secrets - read metadata only (no data access for least privilege)
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs: ["get", "list", "watch"]
+
+  # Apps - read only
+  - apiGroups: ["apps"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # RBAC - read only
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+
+  # CRDs - read only
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources:
+      - customresourcedefinitions
+    verbs: ["get", "list", "watch"]
+
+  # -------------------------------------------------------
+  # OPA Gatekeeper policy CRDs - FULL access
+  # -------------------------------------------------------
+  - apiGroups: ["constraints.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["templates.gatekeeper.sh"]
+    resources:
+      - constrainttemplates
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["config.gatekeeper.sh"]
+    resources:
+      - configs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["status.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["mutations.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # -------------------------------------------------------
+  # Kyverno policy CRDs - FULL access
+  # -------------------------------------------------------
+  - apiGroups: ["kyverno.io"]
+    resources:
+      - clusterpolicies
+      - policies
+      - clusterreportchangerequests
+      - reportchangerequests
+      - admissionreports
+      - clusteradmissionreports
+      - backgroundscanreports
+      - clusterbackgroundscanreports
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources:
+      - clusterpolicyreports
+      - policyreports
+    verbs: ["get", "list", "watch"]
+
+  # -------------------------------------------------------
+  # Cilium network policy CRDs - FULL access
+  # -------------------------------------------------------
+  - apiGroups: ["cilium.io"]
+    resources:
+      - ciliumnetworkpolicies
+      - ciliumclusterwidenetworkpolicies
+      - ciliumendpointslices
+      - ciliumidentities
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # -------------------------------------------------------
+  # SPIRE / SPIFFE - read identity records
+  # -------------------------------------------------------
+  - apiGroups: ["spire.spiffe.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # Pod Security Admission audit
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources:
+      - validatingwebhookconfigurations
+      - mutatingwebhookconfigurations
+    verbs: ["get", "list", "watch"]
+
+  # Networking - read only
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # Metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: security-binding
+  labels:
+    platform.iip.com/role: security
+subjects:
+  - kind: Group
+    name: security-engineers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: security-team
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: security
+  apiGroup: rbac.authorization.k8s.io

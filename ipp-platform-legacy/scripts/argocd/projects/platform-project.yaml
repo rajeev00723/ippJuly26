@@ -1,0 +1,86 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  # Finalizer prevents accidental deletion while apps exist in this project
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Platform engineering project - manages all IIP infrastructure and tooling"
+
+  # Source repositories allowed by this project
+  sourceRepos:
+    - "https://github.com/amitabhmanish13/IPS_app_demo.git"
+    - "https://github.com/amitabhmanish13/IPS_app_demo"
+    # Allow Helm chart repos used by platform components
+    - "https://argoproj.github.io/argo-helm"
+    - "https://charts.crossplane.io/stable"
+    - "https://charts.upbound.io/stable"
+    - "https://kubernetes.github.io/ingress-nginx"
+    - "https://prometheus-community.github.io/helm-charts"
+    - "https://grafana.github.io/helm-charts"
+    - "https://cilium.github.io/helm-charts"
+    - "https://open-policy-agent.github.io/gatekeeper/charts"
+    - "https://kyverno.github.io/kyverno"
+    - "https://spiffe.github.io/helm-charts-hardened"
+    - "https://opencost.github.io/opencost-helm-chart"
+
+  # Allowed deployment destinations
+  destinations:
+    # In-cluster deployment to any namespace
+    - server: "https://kubernetes.default.svc"
+      namespace: "*"
+    # Also allow by cluster name
+    - name: "in-cluster"
+      namespace: "*"
+
+  # Cluster-scoped resource types that are allowed
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # Namespace-scoped resource types allowed
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # Source namespaces (where AppProject-referencing Applications can live)
+  sourceNamespaces:
+    - argocd
+
+  # Roles within the project
+  roles:
+    - name: platform-admin
+      description: "Full access to all platform applications"
+      policies:
+        - p, proj:platform:platform-admin, applications, *, platform/*, allow
+        - p, proj:platform:platform-admin, repositories, *, *, allow
+      groups:
+        - platform-engineers
+        - argocd-admins
+
+    - name: platform-viewer
+      description: "Read-only access to platform applications"
+      policies:
+        - p, proj:platform:platform-viewer, applications, get, platform/*, allow
+      groups:
+        - developers
+        - operations
+
+  # Sync windows - allow all syncs in this demo
+  syncWindows:
+    - kind: allow
+      schedule: "* * * * *"
+      duration: 24h
+      applications:
+        - "*"
+      manualSync: true
+
+  # Orphaned resources monitoring
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: ""
+        kind: ConfigMap
+        name: "kube-root-ca.crt"

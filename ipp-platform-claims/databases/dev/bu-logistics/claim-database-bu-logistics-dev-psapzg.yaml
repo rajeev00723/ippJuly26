@@ -1,0 +1,33 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPDatabaseClaim
+metadata:
+  name: test-db-01
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZDX7Y0
+    iip.dhl.com/provisioning-id: 01KVZDX7Y01YK7223QW8PSAPZG
+    iip.dhl.com/requested-by: dba@dhl.com
+    iip.dhl.com/cost-center: demo-001
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-logistics
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T13:01:03.297Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZDX7Y01YK7223QW8PSAPZG
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    dbName: test-db-01
+    targetProvider: azure
+    environment: dev
+    engine: postgres
+    version: '14'
+    skuName: B_Standard_B1ms
+    storageSizeGb: 32
+    location: westeurope
+    ownerTeam: bu-logistics
+    requestedBy: dba@dhl.com
+    costCenter: demo-001
+  writeConnectionSecretToRef:
+    name: test-db-01-db-creds
+    namespace: iip-outputs

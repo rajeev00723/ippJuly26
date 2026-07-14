@@ -1,0 +1,7 @@
+# ipp-platform-claims — Code Owners
+# @ipp-automation-bot is the sole authorized merge agent for this repo.
+# Human PRs must be reviewed by @ipp-platform-ops before bot merge.
+# Exception approvals (manual overrides) require @ipp-platform-ops.
+* @ipp-automation-bot
+# Exception reviewer:
+# * @ipp-platform-ops

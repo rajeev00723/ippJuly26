@@ -1,0 +1,162 @@
+## Helm values for kube-prometheus-stack
+## Chart: prometheus-community/kube-prometheus-stack
+## Deploy: helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+##           -n monitoring --create-namespace -f prometheus-values.yaml
+
+prometheus:
+  prometheusSpec:
+    retention: 12h
+
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 2Gi
+        cpu: "2"
+
+    ## Allow scraping PodMonitors and ServiceMonitors from any namespace
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+    ## Additional scrape configs for AIOps engine, ArgoCD, and Crossplane
+    additionalScrapeConfigs:
+      ## AIOps FastAPI engine metrics (prometheus-client endpoint)
+      - job_name: aiops-engine
+        static_configs:
+          - targets:
+              - aiops-engine.aiops.svc.cluster.local:8000
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## ArgoCD application controller metrics
+      - job_name: argocd-application-controller
+        static_configs:
+          - targets:
+              - argocd-application-controller-metrics.argocd.svc.cluster.local:8082
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## ArgoCD server metrics
+      - job_name: argocd-server
+        static_configs:
+          - targets:
+              - argocd-server-metrics.argocd.svc.cluster.local:8083
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## ArgoCD repo server metrics
+      - job_name: argocd-repo-server
+        static_configs:
+          - targets:
+              - argocd-repo-server.argocd.svc.cluster.local:8084
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## Crossplane core controller metrics
+      - job_name: crossplane
+        static_configs:
+          - targets:
+              - crossplane.crossplane-system.svc.cluster.local:8080
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## Crossplane RBAC manager metrics
+      - job_name: crossplane-rbac-manager
+        static_configs:
+          - targets:
+              - crossplane-rbac-manager.crossplane-system.svc.cluster.local:8080
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      ## OpenCost allocation metrics
+      - job_name: opencost
+        static_configs:
+          - targets:
+              - opencost.opencost.svc.cluster.local:9003
+        metrics_path: /metrics
+        scrape_interval: 60s
+
+grafana:
+  adminPassword: grafana-demo-local-2024
+
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: "1"
+
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClassName: standard
+
+  ## Sidecar auto-loads ConfigMaps labelled grafana_dashboard=1
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+
+  ## Expose Grafana at grafana.dpcs.local via the separate grafana-ingress.yaml
+  ingress:
+    enabled: false
+
+  grafana.ini:
+    server:
+      root_url: http://grafana.dpcs.local
+    auth.anonymous:
+      enabled: false
+    analytics:
+      reporting_enabled: false
+
+## Disable admission webhooks (pre-install jobs fail in KIND demo environment)
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+
+alertmanager:
+  enabled: false
+
+## Node exporter – lightweight, keep enabled
+nodeExporter:
+  enabled: true
+
+## kube-state-metrics – needed for pod/deployment metrics
+kubeStateMetrics:
+  enabled: true
+
+## Default rules cover pods, nodes, k8s api, etc.
+defaultRules:
+  create: true
+  rules:
+    alertmanager: false
+    etcd: false
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserver: false
+    kubeApiserverAvailability: false
+    kubeApiserverSlos: false
+    kubelet: true
+    kubeProxy: false
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true

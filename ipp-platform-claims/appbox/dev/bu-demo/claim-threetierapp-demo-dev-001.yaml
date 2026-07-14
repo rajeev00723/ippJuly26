@@ -1,0 +1,68 @@
+# IPP AppBox Claim — Employee Portal (Demo)
+# Business Unit: bu-demo
+# Environment:   dev
+# Sequence:      001
+#
+# Merged from two source claims:
+#   crossplane/claims/employee-portal-claim.yaml
+#   claims/employee-portal/threetierapp-claim.yaml
+# Both targeted the same workload; this is the canonical IPP form.
+#
+# This file is managed by @ipp-automation-bot.
+# To update: open a PR — bot validates via Conftest and merges on policy pass.
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPAppBoxClaim
+metadata:
+  name: employee-portal-demo-dev-001
+  namespace: ipp-appbox-dev
+  labels:
+    app.kubernetes.io/name: employee-portal
+    app.kubernetes.io/part-of: ipp-platform
+    app.kubernetes.io/managed-by: ipp-automation-bot
+    platform.ipp.dhl.com/team: employee-platform
+    platform.ipp.dhl.com/environment: dev
+    platform.ipp.dhl.com/business-unit: bu-demo
+    platform.ipp.dhl.com/resource-type: appbox
+  annotations:
+    # Required DHL annotations — all must be present or Conftest rejects the PR
+    ipp.dhl.com/request-id: "IPP-REQ-DEMO-001"
+    ipp.dhl.com/business-unit: "bu-demo"
+    ipp.dhl.com/cost-center: "CC-DEMO-001"
+    ipp.dhl.com/environment: "dev"
+    ipp.dhl.com/requested-by: "platform-demo@dhl.com"
+    # Provenance
+    ipp.dhl.com/source-claim: "crossplane/claims/employee-portal-claim.yaml"
+    ipp.dhl.com/migrated-by: "ipp-migration-module-3"
+spec:
+  parameters:
+    namespace: employee-portal
+
+    frontend:
+      image: ipp-platform/employee-frontend:latest
+      replicas: 2
+
+    backend:
+      image: ipp-platform/employee-backend:latest
+      replicas: 2
+
+    database:
+      storageGB: 10
+      version: "16"
+
+    ingress:
+      host: employee.ipp.local
+
+    owner:
+      team: employee-platform
+      costCenter: CC-DEMO-001
+      environment: dev
+      businessUnit: bu-demo
+      requestedBy: platform-demo@dhl.com
+      requestId: IPP-REQ-DEMO-001
+
+  compositionSelector:
+    matchLabels:
+      platform.ipp.dhl.com/composition: ipp-composition-appbox-threetierapp
+
+  writeConnectionSecretToRef:
+    name: employee-portal-connection

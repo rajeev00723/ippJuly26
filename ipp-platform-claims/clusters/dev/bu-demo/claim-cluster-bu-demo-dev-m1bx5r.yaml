@@ -1,0 +1,32 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPClusterClaim
+metadata:
+  name: test-cluster-01
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZDR0P6
+    iip.dhl.com/provisioning-id: 01KVZDR0P63Q2Z05JQGEM1BX5R
+    iip.dhl.com/requested-by: shruti.test@dhl.com
+    iip.dhl.com/cost-center: demo-001
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-demo
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T12:58:12.040Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZDR0P63Q2Z05JQGEM1BX5R
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    clusterName: test-cluster-01
+    target: kind
+    environment: dev
+    ownerTeam: bu-demo
+    nodeCount: 1
+    nodeVmSize: Standard_B2s
+    location: westeurope
+    requestedBy: shruti.test@dhl.com
+    requestId: REQ-01KVZDR0P6
+    costCenter: demo-001
+  writeConnectionSecretToRef:
+    name: test-cluster-01-kubeconfig
+    namespace: iip-outputs

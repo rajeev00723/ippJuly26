@@ -1,0 +1,1213 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: three-tier-enterprise-app
+  title: Provision Three-Tier Application via Crossplane
+  description: >
+    Provision a complete three-tier application (React frontend, Go backend,
+    PostgreSQL) directly onto the cluster via Upbound Crossplane. Creates a
+    dedicated namespace with zero-trust networking (Cilium), policy enforcement
+    (OPA + Kyverno), and cost tracking (OpenCost). No GitHub required.
+  tags:
+    - kubernetes
+    - crossplane
+    - enterprise
+    - three-tier
+    - postgresql
+    - self-service
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day0-provision-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 0 — Provision New Infrastructure (infraType: three-tier-k8s)"
+spec:
+  owner: platform-engineers
+  type: service
+
+  parameters:
+    - title: Application Details
+      required: [applicationName, namespace, environment, ownerTeam]
+      properties:
+        applicationName:
+          title: Application Name
+          type: string
+          description: Unique name (lowercase, alphanumeric, hyphens only)
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. payments-api, hr-portal, data-pipeline'
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          description: Namespace to create for this application
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          ui:help: 'Will be created if it does not exist'
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+          description: 'Cost center code for billing tracking'
+
+    - title: Frontend Configuration
+      properties:
+        frontendImage:
+          title: Frontend Container Image
+          type: string
+          default: 'idp-demo/employee-frontend:latest'
+        frontendReplicas:
+          title: Frontend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+
+    - title: Backend Configuration
+      properties:
+        backendImage:
+          title: Backend Container Image
+          type: string
+          default: 'idp-demo/employee-backend:latest'
+        backendReplicas:
+          title: Backend Replicas
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+
+    - title: Database Configuration
+      properties:
+        postgresVersion:
+          title: PostgreSQL Version
+          type: string
+          enum: ["14", "15", "16"]
+          default: "16"
+        databaseStorageGB:
+          title: Database Storage (GB)
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 50
+
+    - title: Networking
+      properties:
+        ingressHost:
+          title: Ingress Hostname
+          type: string
+          default: 'myapp.dpcs.local'
+          description: 'Must resolve to the cluster — add to /etc/hosts if needed'
+
+  steps:
+    - id: log-params
+      name: Log Parameters
+      action: debug:log
+      input:
+        message: |
+          Provisioning: ${{ parameters.applicationName }} in ${{ parameters.namespace }}
+          Owner: ${{ parameters.ownerTeam }} | Env: ${{ parameters.environment }}
+          Cost Center: ${{ parameters.costCenter }}
+          Frontend: ${{ parameters.frontendImage }} x${{ parameters.frontendReplicas }}
+          Backend:  ${{ parameters.backendImage }} x${{ parameters.backendReplicas }}
+          Database: PostgreSQL v${{ parameters.postgresVersion }}, ${{ parameters.databaseStorageGB }}GB
+          Ingress:  http://${{ parameters.ingressHost }}
+
+    - id: apply-claim
+      name: Apply Crossplane ThreeTierAppClaim
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: ThreeTierAppClaim
+          metadata:
+            name: ${{ parameters.applicationName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.applicationName }}
+              owner: ${{ parameters.ownerTeam }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              namespace: ${{ parameters.namespace }}
+              frontend:
+                image: ${{ parameters.frontendImage }}
+                replicas: ${{ parameters.frontendReplicas }}
+              backend:
+                image: ${{ parameters.backendImage }}
+                replicas: ${{ parameters.backendReplicas }}
+              database:
+                storageGB: ${{ parameters.databaseStorageGB }}
+                version: "${{ parameters.postgresVersion }}"
+              ingress:
+                host: ${{ parameters.ingressHost }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.applicationName }}-connection
+
+  output:
+    links:
+      - title: Argo CD — watch provisioning
+        url: http://argocd.dpcs.local/applications
+        icon: web
+    text:
+      - title: What happens next
+        content: |
+          **Claim created**: `${{ parameters.applicationName }}` in namespace `${{ parameters.namespace }}`
+
+          Crossplane is now processing the claim and will provision:
+          - Kubernetes namespace `${{ parameters.namespace }}`
+          - Frontend deployment (${{ parameters.frontendReplicas }} replica(s))
+          - Backend deployment (${{ parameters.backendReplicas }} replica(s))
+          - PostgreSQL StatefulSet (v${{ parameters.postgresVersion }}, ${{ parameters.databaseStorageGB }}GB)
+          - Ingress at **http://${{ parameters.ingressHost }}**
+          - Cilium network policies (zero-trust)
+          - Resource quotas and limit ranges
+
+          Monitor progress:
+          ```
+          kubectl get threetierappclaims -n ${{ parameters.namespace }}
+          kubectl -n ${{ parameters.namespace }} get pods -w
+          ```
+
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: destroy-three-tier-app
+  title: Destroy Three-Tier Application
+  description: >
+    Destroys a previously provisioned three-tier application by deleting
+    the Crossplane ThreeTierAppClaim. Crossplane will cascade-delete all
+    managed resources (namespace, deployments, services, ingress, network policies).
+  tags:
+    - kubernetes
+    - crossplane
+    - destroy
+    - self-service
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day2-modify-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 2 — Modify Existing Infrastructure (changeType: destroy-three-tier)"
+spec:
+  owner: platform-engineers
+  type: service
+
+  parameters:
+    - title: Application to Destroy
+      required: [applicationName, namespace, confirmDestroy]
+      properties:
+        applicationName:
+          title: Application Name
+          type: string
+          description: Name of the ThreeTierAppClaim to delete
+          ui:autofocus: true
+        namespace:
+          title: Namespace
+          type: string
+          description: Namespace where the claim was created
+        confirmDestroy:
+          title: Type "destroy" to confirm
+          type: string
+          description: This action is irreversible. All resources including the database will be deleted.
+          ui:help: 'Type the word "destroy" to confirm'
+
+  steps:
+    - id: validate-confirm
+      name: Validate Confirmation
+      action: debug:log
+      input:
+        message: 'Destroying application: ${{ parameters.applicationName }} in ${{ parameters.namespace }}'
+
+    - id: delete-claim
+      name: Delete ThreeTierAppClaim
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: ThreeTierAppClaim
+        name: ${{ parameters.applicationName }}
+        namespace: ${{ parameters.namespace }}
+
+  output:
+    text:
+      - title: Destruction initiated
+        content: |
+          **Claim deleted**: `${{ parameters.applicationName }}` in namespace `${{ parameters.namespace }}`
+
+          Crossplane is now deleting all managed resources:
+          - Namespace `${{ parameters.namespace }}`
+          - All Deployments, Services, and Ingresses
+          - PostgreSQL StatefulSet and PVC
+          - Cilium network policies
+
+          Monitor:
+          ```
+          kubectl get threetierappclaims -A
+          kubectl get ns ${{ parameters.namespace }}
+          ```
+
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: scale-application
+  title: Scale Application Deployment
+  description: >
+    Scale the frontend or backend replicas of a provisioned three-tier application.
+    Uses the Crossplane claim update to trigger reconciliation.
+  tags:
+    - kubernetes
+    - day2
+    - scale
+    - operations
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day2-modify-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 2 — Modify Existing Infrastructure (changeType: scale)"
+spec:
+  owner: platform-engineers
+  type: service
+
+  parameters:
+    - title: Scale Configuration
+      required: [applicationName, namespace, component, replicas]
+      properties:
+        applicationName:
+          title: Application Name
+          type: string
+          description: Name of the application to scale
+          ui:autofocus: true
+        namespace:
+          title: Namespace
+          type: string
+          description: Application namespace
+        component:
+          title: Component to Scale
+          type: string
+          enum: [frontend, backend]
+          default: frontend
+          description: Which component to scale
+        replicas:
+          title: Number of Replicas
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 2
+          description: Desired replica count
+
+  steps:
+    - id: log-scale
+      name: Log Scale Operation
+      action: debug:log
+      input:
+        message: 'Scaling ${{ parameters.component }} of ${{ parameters.applicationName }} to ${{ parameters.replicas }} replicas'
+
+    - id: scale-deployment
+      name: Apply Scale via Kubernetes
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ parameters.applicationName }}-${{ parameters.component }}
+            namespace: ${{ parameters.namespace }}
+          spec:
+            replicas: ${{ parameters.replicas }}
+
+  output:
+    text:
+      - title: Scale operation submitted
+        content: |
+          **${{ parameters.component }}** scaled to **${{ parameters.replicas }}** replicas.
+
+          Monitor:
+          ```
+          kubectl -n ${{ parameters.namespace }} get deploy ${{ parameters.applicationName }}-${{ parameters.component }} -w
+          ```
+
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: provision-kubevirt-vm-app
+  title: Provision KubeVirt VM + Deploy 3-Tier App
+  description: >
+    Provision a KubeVirt VirtualMachine via Crossplane and automatically
+    deploy the 3-tier employee application (nginx frontend, Python API,
+    PostgreSQL) on the VM using cloud-init. The VM is a single Fedora
+    instance running all tiers — mirrors a traditional VM-based deployment
+    alongside the Kubernetes pod-based path.
+  tags:
+    - kubevirt
+    - vm
+    - crossplane
+    - three-tier
+    - self-service
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day0-provision-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 0 — Provision New Infrastructure (infraType: kubevirt-vm-app)"
+spec:
+  owner: platform-engineers
+  type: service
+
+  parameters:
+    - title: VM Identity
+      required: [vmName, namespace, ownerTeam, environment]
+      properties:
+        vmName:
+          title: VM Name
+          type: string
+          description: Unique name for the VirtualMachine (lowercase, alphanumeric, hyphens)
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. employee-vm-dev, hr-vm-prod'
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          description: Dedicated namespace for this VM — must NOT be a system namespace (kubevirt, kube-system, crossplane-system, argocd, backstage, etc.)
+          default: vmapp-dev
+          pattern: '^(?!kubevirt$|kube-system$|kube-public$|crossplane-system$|argocd$|backstage$|monitoring$|cilium$|spire$|gatekeeper-system$|kyverno$|vault$|opencost$|aiops$|ingress-nginx$|default$)[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          ui:help: 'Use a dedicated name like vmapp-dev or employee-vm-staging. Never use kubevirt or other system namespaces.'
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+
+    - title: VM Sizing
+      properties:
+        cpuCores:
+          title: vCPU Cores
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 4
+          description: Number of virtual CPU cores
+        memoryMi:
+          title: Memory (MiB)
+          type: integer
+          default: 2048
+          minimum: 512
+          maximum: 4096
+          description: VM RAM in MiB (1024 = 1 GiB, 2048 = 2 GiB)
+
+    - title: Networking
+      properties:
+        ingressHost:
+          title: Ingress Hostname
+          type: string
+          default: 'vmapp.dpcs.local'
+          description: 'Must resolve to the cluster — add to /etc/hosts if needed'
+
+  steps:
+    - id: log-params
+      name: Log VM Provisioning Request
+      action: debug:log
+      input:
+        message: |
+          Provisioning KubeVirt VM: ${{ parameters.vmName }}
+          Namespace: ${{ parameters.namespace }}
+          Owner: ${{ parameters.ownerTeam }} | Env: ${{ parameters.environment }}
+          vCPU: ${{ parameters.cpuCores }} cores | RAM: ${{ parameters.memoryMi }} MiB
+          Ingress: http://${{ parameters.ingressHost }}
+          Target: Single VM running nginx + Python API + PostgreSQL via cloud-init
+
+    - id: apply-vm-claim
+      name: Apply VMAppClaim via Crossplane
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.vmName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              app: ${{ parameters.vmName }}
+              owner: ${{ parameters.ownerTeam }}
+              environment: ${{ parameters.environment }}
+              managed-by: backstage-idp
+              target: kubevirt-vm
+          spec:
+            parameters:
+              vmName: ${{ parameters.vmName }}
+              namespace: ${{ parameters.namespace }}
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              ingressHost: ${{ parameters.ingressHost }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: vm-three-tier-app
+            writeConnectionSecretToRef:
+              name: ${{ parameters.vmName }}-vm-connection
+
+  output:
+    links:
+      - title: Argo CD — watch VM provisioning
+        url: http://argocd.dpcs.local/applications
+        icon: web
+      - title: Employee Portal on VM
+        url: http://vmapp.dpcs.local
+        icon: web
+    text:
+      - title: What happens next
+        content: |
+          **VMAppClaim created**: `${{ parameters.vmName }}` in namespace `${{ parameters.namespace }}`
+
+          Crossplane is now provisioning via KubeVirt:
+          - Kubernetes namespace `${{ parameters.namespace }}`
+          - KubeVirt VirtualMachine `${{ parameters.vmName }}` (${{ parameters.cpuCores }} vCPU, ${{ parameters.memoryMi }} MiB RAM)
+          - Fedora Cloud base image with cloud-init bootstrapping
+          - **cloud-init installs**: PostgreSQL (podman), Python API backend, nginx frontend
+          - ClusterIP Service + nginx Ingress at **http://${{ parameters.ingressHost }}**
+
+          The VM takes **3–5 minutes** to boot and initialise all services.
+
+          Monitor progress:
+          ```
+          kubectl get vmappclaims -n ${{ parameters.namespace }}
+          kubectl -n ${{ parameters.namespace }} get vmi -w
+          virtctl console ${{ parameters.vmName }} -n ${{ parameters.namespace }}
+          ```
+
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: destroy-kubevirt-vm-app
+  title: Destroy KubeVirt VM Application
+  description: >
+    Destroys a KubeVirt VM provisioned via the VMAppClaim template.
+    Deletes the Crossplane VMAppClaim which cascades to remove the
+    VirtualMachine, Service, Ingress, and Namespace.
+  tags:
+    - kubevirt
+    - vm
+    - destroy
+    - crossplane
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day2-modify-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 2 — Modify Existing Infrastructure (changeType: destroy-vm)"
+spec:
+  owner: platform-engineers
+  type: service
+
+  parameters:
+    - title: VM to Destroy
+      required: [vmName, namespace, confirmDestroy]
+      properties:
+        vmName:
+          title: VM Name
+          type: string
+          description: Name of the VMAppClaim / VirtualMachine to destroy
+          ui:autofocus: true
+        namespace:
+          title: Namespace
+          type: string
+          description: Namespace where the VMAppClaim was created
+        confirmDestroy:
+          title: Type "destroy" to confirm
+          type: string
+          description: The VM and all its data will be permanently deleted.
+          ui:help: 'Type the word "destroy" to confirm'
+
+  steps:
+    - id: log-destroy
+      name: Log Destroy Request
+      action: debug:log
+      input:
+        message: 'Destroying KubeVirt VM: ${{ parameters.vmName }} in ${{ parameters.namespace }}'
+
+    - id: delete-vm-claim
+      name: Delete VMAppClaim
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: VMAppClaim
+        name: ${{ parameters.vmName }}
+        namespace: ${{ parameters.namespace }}
+
+  output:
+    text:
+      - title: VM destruction initiated
+        content: |
+          **VMAppClaim deleted**: `${{ parameters.vmName }}` in namespace `${{ parameters.namespace }}`
+
+          Crossplane is now removing all VM resources:
+          - KubeVirt VirtualMachine `${{ parameters.vmName }}`
+          - ClusterIP Service and Ingress
+          - Namespace `${{ parameters.namespace }}`
+
+          Monitor:
+          ```
+          kubectl get vmappclaims -A
+          kubectl -n ${{ parameters.namespace }} get vmi
+          kubectl get ns ${{ parameters.namespace }}
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: deploy-kubevirt-vm
+  title: Deploy KubeVirt VM Application
+  description: >
+    Deploy a standalone KubeVirt VirtualMachine via Crossplane. Provisions a
+    Fedora-based VM with configurable CPU and memory on the cluster. Does not
+    include the 3-tier employee app — use "Provision KubeVirt VM + Deploy 3-Tier App"
+    for a full application deployment.
+  tags:
+    - kubevirt
+    - vm
+    - crossplane
+    - self-service
+    - infrastructure
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day0-provision-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 0 — Provision New Infrastructure (infraType: kubevirt-vm-standalone)"
+spec:
+  owner: platform-engineers
+  type: infrastructure
+
+  parameters:
+    - title: VM Identity
+      required: [vmName, namespace, ownerTeam, environment]
+      properties:
+        vmName:
+          title: VM Name
+          type: string
+          description: Unique name for the VirtualMachine (lowercase, alphanumeric, hyphens)
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. dev-vm-01, test-worker, ci-runner'
+        namespace:
+          title: Kubernetes Namespace
+          type: string
+          description: Namespace to deploy the VM into (created if absent)
+          pattern: '^[a-z][a-z0-9-]{1,28}[a-z0-9]$'
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: platform-engineers
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+        costCenter:
+          title: Cost Center
+          type: string
+          default: 'demo-001'
+          description: OpenCost chargeback code
+
+    - title: VM Sizing
+      properties:
+        cpuCores:
+          title: vCPU Cores
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 8
+        memoryMi:
+          title: Memory (MiB)
+          type: integer
+          default: 2048
+          minimum: 512
+          maximum: 8192
+        diskGi:
+          title: Root Disk (GiB)
+          type: integer
+          default: 20
+          minimum: 10
+          maximum: 100
+
+  steps:
+    - id: log-params
+      name: Log VM Request
+      action: debug:log
+      input:
+        message: |
+          Deploying KubeVirt VM: ${{ parameters.vmName }}
+          Namespace: ${{ parameters.namespace }}
+          vCPU: ${{ parameters.cpuCores }} | RAM: ${{ parameters.memoryMi }} MiB | Disk: ${{ parameters.diskGi }} GiB
+
+    - id: apply-vm-claim
+      name: Apply VirtualMachine via Crossplane
+      action: crossplane:apply-claim
+      input:
+        namespace: ${{ parameters.namespace }}
+        plural: vmappclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: VMAppClaim
+          metadata:
+            name: ${{ parameters.vmName }}
+            namespace: ${{ parameters.namespace }}
+            labels:
+              platform.dpcs.io/environment: ${{ parameters.environment }}
+              platform.dpcs.io/team: ${{ parameters.ownerTeam }}
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              vmName: ${{ parameters.vmName }}
+              namespace: ${{ parameters.namespace }}
+              cpuCores: ${{ parameters.cpuCores }}
+              memoryMi: ${{ parameters.memoryMi }}
+              owner:
+                team: ${{ parameters.ownerTeam }}
+                environment: ${{ parameters.environment }}
+                costCenter: ${{ parameters.costCenter }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.vmName }}-vm-connection
+
+  output:
+    links:
+      - title: Argo CD — watch VM provisioning
+        url: http://argocd.dpcs.local/applications
+        icon: web
+    text:
+      - title: VM deployment initiated
+        content: |
+          **VMAppClaim created**: `${{ parameters.vmName }}` in namespace `${{ parameters.namespace }}`
+
+          Monitor:
+          ```
+          kubectl get vmappclaims -n ${{ parameters.namespace }}
+          kubectl -n ${{ parameters.namespace }} get vmi -w
+          virtctl console ${{ parameters.vmName }} -n ${{ parameters.namespace }}
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: provision-kind-cluster
+  title: Provision Kubernetes Cluster (KIND)
+  description: >
+    Provision a new KIND (Kubernetes in Docker) cluster on the DPCS platform
+    via Crossplane. Creates a fully configured cluster with kubeconfig secret,
+    namespace isolation, RBAC, and optional Argo CD auto-registration.
+    Ideal for ephemeral dev/test environments and CI pipelines.
+  tags:
+    - kubernetes
+    - kind
+    - cluster
+    - crossplane
+    - self-service
+    - infrastructure
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day0-provision-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 0 — Provision New Infrastructure (infraType: kind-cluster)"
+spec:
+  owner: platform-engineers
+  type: infrastructure
+
+  parameters:
+    - title: Cluster Details
+      required: [clusterName, environment, ownerTeam]
+      properties:
+        clusterName:
+          title: Cluster Name
+          type: string
+          description: Unique cluster name (lowercase, alphanumeric, hyphens only)
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+          description: Cluster tier — affects resource quotas and retention policy
+        ownerTeam:
+          title: Owner Team
+          type: string
+          description: Team responsible for this cluster
+          default: platform-engineers
+        costCenter:
+          title: Cost Center
+          type: string
+          description: OpenCost chargeback code
+          default: 'demo-001'
+
+    - title: Cluster Configuration
+      properties:
+        nodeCount:
+          title: Worker Nodes
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 1
+          description: Number of KIND worker nodes (1–5)
+        kubernetesVersion:
+          title: Kubernetes Version
+          type: string
+          enum:
+            - 'v1.31'
+            - 'v1.30'
+            - 'v1.29'
+          default: 'v1.31'
+          description: KIND node image Kubernetes version
+        enableArgoCD:
+          title: Register with Argo CD
+          type: boolean
+          default: true
+          description: Automatically register this cluster as an Argo CD destination
+        enableMonitoring:
+          title: Enable Prometheus Scraping
+          type: boolean
+          default: true
+          description: Install kube-state-metrics and enable Prometheus remote write
+
+  steps:
+    - id: log-params
+      name: Log Parameters
+      action: debug:log
+      input:
+        message: |
+          Creating KIND cluster: ${{ parameters.clusterName }}
+          Environment: ${{ parameters.environment }}
+          Nodes: ${{ parameters.nodeCount }}
+          K8s Version: ${{ parameters.kubernetesVersion }}
+          Owner: ${{ parameters.ownerTeam }}
+          Argo CD: ${{ parameters.enableArgoCD }}
+
+    - id: apply-cluster-claim
+      name: Apply KIND Cluster Claim via Crossplane
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: kindclusterclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: KindClusterClaim
+          metadata:
+            name: ${{ parameters.clusterName }}
+            namespace: crossplane-system
+            labels:
+              platform.dpcs.io/environment: ${{ parameters.environment }}
+              platform.dpcs.io/team: ${{ parameters.ownerTeam }}
+              platform.dpcs.io/cost-center: ${{ parameters.costCenter }}
+          spec:
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              nodeCount: ${{ parameters.nodeCount }}
+              kubernetesVersion: ${{ parameters.kubernetesVersion }}
+              environment: ${{ parameters.environment }}
+              ownerTeam: ${{ parameters.ownerTeam }}
+              enableArgoCD: ${{ parameters.enableArgoCD }}
+              enableMonitoring: ${{ parameters.enableMonitoring }}
+            writeConnectionSecretToRef:
+              name: ${{ parameters.clusterName }}-kubeconfig
+
+  output:
+    links:
+      - title: Argo CD — watch cluster registration
+        url: http://argocd.dpcs.local
+        icon: web
+      - title: What happens next
+        icon: docs
+        text: |
+          Cluster provisioned: **${{ parameters.clusterName }}**
+
+          Crossplane is creating:
+          - KIND cluster with ${{ parameters.nodeCount }} worker node(s)
+          - Kubernetes ${{ parameters.kubernetesVersion }}
+          - Kubeconfig secret: `${{ parameters.clusterName }}-kubeconfig`
+          - Namespace: `${{ parameters.ownerTeam }}`
+          - RBAC bindings for team `${{ parameters.ownerTeam }}`
+          ${{ parameters.enableArgoCD === true && '- Argo CD cluster registration' || '' }}
+          ${{ parameters.enableMonitoring === true && '- Prometheus scrape target' || '' }}
+
+          Monitor provisioning:
+          ```
+          kubectl get kindclusterclaims -A
+          kubectl get secret ${{ parameters.clusterName }}-kubeconfig -n ${{ parameters.ownerTeam }}
+          ```
+
+          Connect to your cluster:
+          ```
+          kubectl get secret ${{ parameters.clusterName }}-kubeconfig \
+            -n ${{ parameters.ownerTeam }} \
+            -o jsonpath='{.data.kubeconfig}' | base64 -d > ~/.kube/${{ parameters.clusterName }}.yaml
+          export KUBECONFIG=~/.kube/${{ parameters.clusterName }}.yaml
+          kubectl get nodes
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: provision-azure-aks-tiny
+  title: Provision Azure AKS Tiny Cluster
+  description: >
+    Provision a lightweight Azure Kubernetes Service (AKS) cluster via
+    Crossplane + provider-azure. Creates a dedicated Resource Group,
+    Virtual Network, Subnet, and a 1–3 node AKS cluster (Standard_D2s_v7 by
+    default). Kubeconfig is stored as a Kubernetes Secret and optionally
+    registered with Argo CD. Requires Azure credentials in the
+    crossplane-system/azure-creds Secret.
+  tags:
+    - azure
+    - aks
+    - kubernetes
+    - crossplane
+    - cloud
+    - self-service
+    - infrastructure
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day0-provision-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 0 — Provision New Infrastructure (infraType: azure-aks)"
+spec:
+  owner: platform-engineers
+  type: infrastructure
+
+  parameters:
+    - title: Cluster Identity
+      required: [clusterName, environment, ownerTeam]
+      properties:
+        clusterName:
+          title: Cluster Name
+          type: string
+          description: Unique name for the AKS cluster (lowercase, alphanumeric, hyphens)
+          pattern: '^[a-z][a-z0-9-]{2,28}[a-z0-9]$'
+          ui:autofocus: true
+          ui:help: 'e.g. dev-aks-01, ml-staging, ci-ephemeral'
+        environment:
+          title: Target Environment
+          type: string
+          enum: [dev, staging, prod]
+          default: dev
+          description: Affects tags and retention policy
+        ownerTeam:
+          title: Owner Team
+          type: string
+          enum: [developers, platform-engineers, operations-support, security-team]
+          default: developers
+        costCenter:
+          title: Cost Center
+          type: string
+          default: demo-001
+          description: OpenCost / Azure cost-allocation tag
+
+    - title: Azure Configuration
+      required: [location]
+      properties:
+        location:
+          title: Azure Region
+          type: string
+          enum:
+            - eastus
+            - eastus2
+            - westus2
+            - westeurope
+            - northeurope
+            - southeastasia
+          default: eastus
+          description: Azure region where the cluster will be created
+        kubernetesVersion:
+          title: Kubernetes Version
+          type: string
+          enum:
+            - "1.29"
+            - "1.30"
+            - "1.31"
+          default: "1.29"
+          description: AKS Kubernetes version
+
+    - title: Node Pool Sizing
+      properties:
+        nodeCount:
+          title: Node Count
+          type: integer
+          minimum: 1
+          maximum: 3
+          default: 1
+          description: Number of nodes in the default pool (keep at 1 for "tiny")
+        nodeVmSize:
+          title: VM Size
+          type: string
+          enum:
+            - Standard_D2s_v7
+            - Standard_D4s_v7
+            - Standard_D2ds_v7
+            - Standard_D4ds_v7
+          default: Standard_D2s_v7
+          description: Standard_D2s_v7 = 2 vCPU / 8 GB RAM
+
+    - title: Platform Integration
+      properties:
+        enableArgoCD:
+          title: Register with Argo CD
+          type: boolean
+          default: true
+          description: Store kubeconfig and register this cluster as an Argo CD destination
+        enableMonitoring:
+          title: Enable Azure Monitor
+          type: boolean
+          default: false
+          description: Enable Azure Monitor / Container Insights (incurs extra Azure cost)
+
+  steps:
+    - id: log-params
+      name: Log Parameters
+      action: debug:log
+      input:
+        message: |
+          Provisioning Azure AKS cluster: ${{ parameters.clusterName }}
+          Region:      ${{ parameters.location }}
+          K8s version: ${{ parameters.kubernetesVersion }}
+          Nodes:       ${{ parameters.nodeCount }} × ${{ parameters.nodeVmSize }}
+          Owner:       ${{ parameters.ownerTeam }} | Env: ${{ parameters.environment }}
+          Cost Center: ${{ parameters.costCenter }}
+          Argo CD:     ${{ parameters.enableArgoCD }}
+
+    - id: apply-aks-claim
+      name: Apply AKSClusterClaim via Crossplane
+      action: crossplane:apply-claim
+      input:
+        namespace: crossplane-system
+        plural: aksclaims
+        manifest:
+          apiVersion: platform.iip.com/v1alpha1
+          kind: AKSClusterClaim
+          metadata:
+            name: ${{ parameters.clusterName }}
+            namespace: crossplane-system
+            labels:
+              platform.dpcs.io/environment: ${{ parameters.environment }}
+              platform.dpcs.io/team: ${{ parameters.ownerTeam }}
+              platform.dpcs.io/cost-center: ${{ parameters.costCenter }}
+              platform.dpcs.io/cloud: azure
+              managed-by: backstage-idp
+          spec:
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              location: ${{ parameters.location }}
+              kubernetesVersion: "${{ parameters.kubernetesVersion }}"
+              nodeCount: ${{ parameters.nodeCount }}
+              nodeVmSize: ${{ parameters.nodeVmSize }}
+              environment: ${{ parameters.environment }}
+              ownerTeam: ${{ parameters.ownerTeam }}
+              costCenter: ${{ parameters.costCenter }}
+            compositionSelector:
+              matchLabels:
+                platform.iip.com/composition: aks-cluster
+            writeConnectionSecretToRef:
+              name: ${{ parameters.clusterName }}-kubeconfig
+
+  output:
+    links:
+      - title: Argo CD — watch AKS provisioning
+        url: http://argocd.dpcs.local/applications
+        icon: web
+    text:
+      - title: What happens next
+        content: |
+          **AKSClusterClaim created**: `${{ parameters.clusterName }}`
+
+          Crossplane is now provisioning on Azure (${{ parameters.location }}):
+          - Resource Group: `rg-${{ parameters.clusterName }}`
+          - Virtual Network: `vnet-${{ parameters.clusterName }}` (10.0.0.0/16)
+          - Subnet: `subnet-${{ parameters.clusterName }}` (10.0.1.0/24)
+          - AKS Cluster: `${{ parameters.clusterName }}` — ${{ parameters.nodeCount }} × ${{ parameters.nodeVmSize }}, K8s ${{ parameters.kubernetesVersion }}
+          - Kubeconfig Secret: `${{ parameters.clusterName }}-kubeconfig` (crossplane-system)
+
+          > **Typical provisioning time: 8–15 minutes.**
+
+          Monitor via Crossplane:
+          ```
+          kubectl get aksclaims -A
+          kubectl describe akscluster ${{ parameters.clusterName }}
+          ```
+
+          Retrieve kubeconfig once READY=True:
+          ```
+          kubectl get secret ${{ parameters.clusterName }}-kubeconfig \
+            -n crossplane-system \
+            -o jsonpath='{.data.kubeconfig}' | base64 -d \
+            > ~/.kube/${{ parameters.clusterName }}-azure.yaml
+          export KUBECONFIG=~/.kube/${{ parameters.clusterName }}-azure.yaml
+          kubectl get nodes
+          ```
+
+          Estimated Azure cost (${{ parameters.nodeVmSize }} × ${{ parameters.nodeCount }} node, ${{ parameters.location }}):
+          ~$0.096/hr per node (Standard_D2s_v7, ~$70/month at 100% utilisation). Destroy when done.
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: destroy-azure-aks-cluster
+  title: Destroy Azure AKS Cluster
+  description: >
+    Delete an AKSClusterClaim. Crossplane will cascade-delete the AKS cluster,
+    subnet, virtual network, and resource group from Azure. This is irreversible.
+  tags:
+    - azure
+    - aks
+    - destroy
+    - crossplane
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day2-modify-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 2 — Modify Existing Infrastructure (changeType: destroy-aks)"
+spec:
+  owner: platform-engineers
+  type: infrastructure
+
+  parameters:
+    - title: Cluster to Destroy
+      required: [clusterName, confirmDestroy]
+      properties:
+        clusterName:
+          title: Cluster Name
+          type: string
+          description: Name of the AKSClusterClaim to delete
+          ui:autofocus: true
+        confirmDestroy:
+          title: Type "destroy" to confirm
+          type: string
+          description: All Azure resources including the cluster and VNet will be permanently deleted.
+          ui:help: 'Type the word "destroy" to confirm'
+
+  steps:
+    - id: log-destroy
+      name: Log Destroy Request
+      action: debug:log
+      input:
+        message: 'Destroying AKS cluster: ${{ parameters.clusterName }}'
+
+    - id: delete-aks-claim
+      name: Delete AKSClusterClaim
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: AKSClusterClaim
+        name: ${{ parameters.clusterName }}
+        namespace: crossplane-system
+        plural: aksclaims
+
+  output:
+    text:
+      - title: Destruction initiated
+        content: |
+          **AKSClusterClaim deleted**: `${{ parameters.clusterName }}`
+
+          Crossplane is now removing all Azure resources:
+          - AKS cluster `${{ parameters.clusterName }}`
+          - Subnet, Virtual Network, Resource Group
+
+          Monitor:
+          ```
+          kubectl get aksclaims -A
+          ```
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: destroy-kind-cluster
+  title: Destroy Kubernetes Cluster
+  description: >
+    Delete a KindClusterClaim. Crossplane will cascade-delete the KIND cluster
+    and all associated resources including the kubeconfig secret and RBAC
+    bindings. This is irreversible.
+  tags:
+    - kubernetes
+    - kind
+    - cluster
+    - destroy
+    - crossplane
+    - self-service
+    - _deprecated
+  annotations:
+    ipp.dhl.com/deprecated: "true"
+    ipp.dhl.com/superseded-by: day2-modify-infrastructure
+    ipp.dhl.com/deprecation-note: "Use Day 2 — Modify Existing Infrastructure (changeType: destroy-kind)"
+spec:
+  owner: platform-engineers
+  type: infrastructure
+
+  parameters:
+    - title: Cluster to Destroy
+      required: [clusterName, confirmDestroy]
+      properties:
+        clusterName:
+          title: Cluster Name
+          type: string
+          description: Name of the KindClusterClaim to delete
+          ui:autofocus: true
+        confirmDestroy:
+          title: Type "destroy" to confirm
+          type: string
+          description: All cluster resources will be permanently deleted. This cannot be undone.
+          ui:help: 'Type the word "destroy" to confirm'
+
+  steps:
+    - id: log-destroy
+      name: Log Destroy Request
+      action: debug:log
+      input:
+        message: 'Destroying KIND cluster: ${{ parameters.clusterName }}'
+
+    - id: delete-cluster-claim
+      name: Delete KindClusterClaim
+      action: kubernetes:delete-resource
+      input:
+        apiVersion: platform.iip.com/v1alpha1
+        kind: KindClusterClaim
+        name: ${{ parameters.clusterName }}
+        namespace: crossplane-system
+        plural: kindclusterclaims
+
+  output:
+    text:
+      - title: Cluster destruction initiated
+        content: |
+          **KindClusterClaim deleted**: `${{ parameters.clusterName }}`
+
+          Crossplane is removing all cluster resources.
+
+          Monitor:
+          ```
+          kubectl get kindclusterclaims -A
+          ```

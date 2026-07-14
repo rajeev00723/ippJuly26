@@ -1,0 +1,50 @@
+## Helm values for OpenCost
+## Chart: opencost/opencost
+## Deploy: helm upgrade --install opencost opencost/opencost \
+##           -n opencost --create-namespace -f opencost-values.yaml
+
+opencost:
+  ## Point OpenCost at the in-cluster Prometheus deployed by kube-prometheus-stack
+  prometheus:
+    internal:
+      enabled: true
+      serviceName: kube-prometheus-stack-prometheus
+      namespaceName: monitoring
+      port: 9090
+
+  ## Expose the OpenCost allocation API and UI
+  ui:
+    enabled: true
+
+  ## Resource constraints for the opencost container
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  ## Use standard cloud pricing model (on-prem / kind cluster)
+  cloudProviderApiKey: ""
+
+  ## Default currency
+  currencyCode: USD
+
+## Service configuration
+service:
+  type: ClusterIP
+  ## Allocation API port
+  port: 9090
+  ## UI port
+  uiPort: 9090
+
+## Disable the bundled Prometheus (we use kube-prometheus-stack)
+prometheus:
+  enabled: false
+
+## Pod annotations for Prometheus scraping (picked up by the additionalScrapeConfig in prometheus-values.yaml)
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "9003"

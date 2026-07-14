@@ -1,0 +1,27 @@
+apiVersion: platform.ipp.dhl.com/v1alpha1
+kind: IPPSplunkForwarderClaim
+metadata:
+  name: demo-splunk-01
+  namespace: iip-claims
+  annotations:
+    iip.dhl.com/request-id: REQ-01KVZKHS44
+    iip.dhl.com/provisioning-id: 01KVZKHS44CSXPY1BPF8583ZE4
+    iip.dhl.com/requested-by: amitabh.sharan@dhl.com
+    iip.dhl.com/cost-center: CC-9004
+    iip.dhl.com/environment: dev
+    iip.dhl.com/business-unit: bu-security
+    iip.dhl.com/engine: crossplane
+    iip.dhl.com/request-timestamp: '2026-06-25T14:39:39.140Z'
+  labels:
+    platform.ipp.dhl.com/provisioning-id: 01KVZKHS44CSXPY1BPF8583ZE4
+    platform.ipp.dhl.com/environment: dev
+spec:
+  parameters:
+    forwarderName: demo-splunk-01
+    targetProvider: kind
+    environment: dev
+    targetNamespace: splunk-forwarder
+    splunkHecUrl: https://splunk.ipp.dhl.com:8088
+    splunkIndex: ipp-platform
+    ownerTeam: bu-security
+    requestedBy: amitabh.sharan@dhl.com

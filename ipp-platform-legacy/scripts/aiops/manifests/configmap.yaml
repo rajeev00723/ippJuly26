@@ -1,0 +1,39 @@
+## AIOps Engine — ConfigMap
+## Non-secret configuration for the multi-agent AIOps system.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-config
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+data:
+  PROMETHEUS_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  ARGOCD_URL: "http://argocd-server.argocd.svc.cluster.local:80"
+  OPENCOST_URL: "http://opencost.opencost.svc.cluster.local:9090"
+  HUBBLE_URL: "http://hubble-relay.kube-system.svc.cluster.local:4245"
+  SPIRE_SERVER_URL: "http://spire-server.spire.svc.cluster.local:8081"
+  # On/off switch for Anthropic Claude — the API key (in aiops-secrets) can stay
+  # configured permanently; flip this to move between providers without
+  # touching secrets. See `make aiops-use-claude` / `make aiops-use-local`.
+  ANTHROPIC_ENABLED: "true"
+  # Anthropic Claude model — only used when ANTHROPIC_ENABLED=true and
+  # ANTHROPIC_API_KEY (in aiops-secrets) is set.
+  ANTHROPIC_MODEL: "claude-sonnet-5"
+  # Ollama runs on the host; connect via host.docker.internal.
+  # Used automatically whenever ANTHROPIC_API_KEY is not set.
+  OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+  OLLAMA_MODEL: "llama3.1:8b"
+  LOCAL_LLM_PROVIDER: "ollama"
+  AIOPS_AGENT_MODE: "local"
+  LLM_TIMEOUT: "90.0"
+  LLM_MAX_RETRIES: "1"
+  HTTP_TIMEOUT: "5.0"
+  ANALYSIS_CACHE_TTL: "300"
+  LOG_LEVEL: "INFO"
+  # LangSmith tracing — disabled by default; set to "true" and provide API key to enable
+  LANGCHAIN_TRACING_V2: "false"
+  LANGCHAIN_PROJECT: "idp-aiops-demo"
+  LANGCHAIN_ENDPOINT: "https://api.smith.langchain.com"

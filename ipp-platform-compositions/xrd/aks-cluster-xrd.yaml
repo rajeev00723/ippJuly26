@@ -1,0 +1,113 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xaksclusters.platform.iip.com
+  labels:
+    platform.iip.com/component: xrd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  group: platform.iip.com
+
+  names:
+    kind: XAKSCluster
+    plural: xaksclusters
+
+  claimNames:
+    kind: AKSClusterClaim
+    plural: aksclaims
+
+  connectionSecretKeys:
+    - kubeconfig
+    - endpoint
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - parameters
+              properties:
+                parameters:
+                  type: object
+                  required:
+                    - clusterName
+                    - location
+                    - nodeCount
+                    - nodeVmSize
+                    - environment
+                    - ownerTeam
+                  properties:
+                    clusterName:
+                      type: string
+                      description: AKS cluster name (globally unique within the resource group)
+                    location:
+                      type: string
+                      description: Azure region (e.g. eastus, westeurope)
+                      default: eastus
+                    nodeCount:
+                      type: integer
+                      description: Number of default node pool nodes
+                      default: 1
+                      minimum: 1
+                      maximum: 3
+                    nodeVmSize:
+                      type: string
+                      description: VM SKU for the default node pool
+                      default: Standard_B2s
+                    kubernetesVersion:
+                      type: string
+                      description: Kubernetes version for the AKS cluster
+                      default: "1.29"
+                    environment:
+                      type: string
+                      enum: [dev, staging, prod]
+                    ownerTeam:
+                      type: string
+                    costCenter:
+                      type: string
+                      default: demo-001
+            status:
+              type: object
+              properties:
+                clusterEndpoint:
+                  type: string
+                resourceGroupName:
+                  type: string
+                appIp:
+                  type: string
+                  description: External LoadBalancer IP of the sample app on AKS
+                appUrl:
+                  type: string
+                  description: URL of the sample app on AKS
+                cloudType:
+                  type: string
+                  description: Private vs public cloud classification (platform.ipp.dhl.com/cloud-type)
+      additionalPrinterColumns:
+        - name: CLUSTER
+          type: string
+          jsonPath: ".spec.parameters.clusterName"
+        - name: LOCATION
+          type: string
+          jsonPath: ".spec.parameters.location"
+        - name: ENVIRONMENT
+          type: string
+          jsonPath: ".spec.parameters.environment"
+        - name: CLOUD
+          type: string
+          jsonPath: ".status.cloudType"
+        - name: SYNCED
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Synced')].status"
+        - name: READY
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Ready')].status"
+        - name: AGE
+          type: date
+          jsonPath: ".metadata.creationTimestamp"

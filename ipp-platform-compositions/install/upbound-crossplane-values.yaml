@@ -1,0 +1,132 @@
+# Helm values for Upbound Universal Crossplane (UXP)
+# Chart:   upbound/crossplane  (https://charts.upbound.io/stable)
+# Version: 2.2.1-up.1  (latest stable as of 2026-05-16; no newer chart available)
+# Image:   xpkg.upbound.io/upbound/crossplane:v2.2.1-up.1
+# Platform: Apple Silicon (arm64) / KIND cluster
+#
+# Provider version policy (2026-05-16 upgrade review):
+#   provider-kubernetes  v0.14.4  → PINNED (v0.14.4 is the highest v0.14.x patch;
+#                                   v1.x skipped — introduces kubernetes.m.crossplane.io
+#                                   API group that requires full Composition migration)
+#   provider-helm        v0.19.0  → v0.19.4 (safe patch bump, same API group)
+#   function-p&t         v0.9.0   → v0.9.3 (safe patch bump, same pt.fn.crossplane.io/v1beta1)
+#   (v1.x providers skipped until Compositions are migrated to new API groups)
+
+# ---------------------------------------------------------------
+# Replica count — keep 1 for single-cluster KIND demo
+# ---------------------------------------------------------------
+replicas: 1
+
+# ---------------------------------------------------------------
+# Image — UXP image (differs from upstream crossplane/crossplane)
+# ---------------------------------------------------------------
+image:
+  repository: xpkg.upbound.io/upbound/crossplane
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------
+# Resource limits — sized for Apple Silicon M-series (48 GB)
+# ---------------------------------------------------------------
+resourcesCrossplane:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+resourcesRBACManager:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+# ---------------------------------------------------------------
+# Provider packages installed at chart install time
+# Versions pinned to latest safe Crossplane v2.x-compatible releases
+# See version policy comment at top of file.
+# ---------------------------------------------------------------
+provider:
+  packages:
+    - xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
+    - xpkg.upbound.io/crossplane-contrib/provider-helm:v0.21.0
+
+# ---------------------------------------------------------------
+# Function packages — P&T v0.9.x series, same pt.fn.crossplane.io/v1beta1 API
+# ---------------------------------------------------------------
+function:
+  packages:
+    - xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.9.3
+
+# ---------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------
+metrics:
+  enabled: true
+
+# ---------------------------------------------------------------
+# Security context — appropriate for KIND (non-root, read-only fs)
+# ---------------------------------------------------------------
+securityContextCrossplane:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+
+securityContextRBACManager:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------
+# Node selector — schedule on Linux worker nodes
+# ---------------------------------------------------------------
+nodeSelector:
+  kubernetes.io/os: linux
+
+# Tolerate control-plane taint (required for single-node KIND)
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+# ---------------------------------------------------------------
+# Args — UXP v2.x defaults are --enable-operations and
+# --package-runtime=External; no flags needed for composition
+# functions or revisions (both always-on in v2.x).
+# ---------------------------------------------------------------
+args: []
+
+# ---------------------------------------------------------------
+# Leader election — disable for single-replica demo
+# ---------------------------------------------------------------
+leaderElection: false
+
+# ---------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------
+webhooks:
+  enabled: true
+
+# ---------------------------------------------------------------
+# RBAC Manager
+# ---------------------------------------------------------------
+rbacManager:
+  deploy: true
+  replicas: 1
+  leaderElection: false

@@ -1,0 +1,17 @@
+# These patches fix the "cannot initialize dependency graph" Healthy=False condition
+# on both providers when function-patch-and-transform is already in the lock graph.
+# Applied once after cluster bootstrap; idempotent (skipDependencyResolution: true is safe).
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: crossplane-contrib-provider-helm
+spec:
+  skipDependencyResolution: true
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: crossplane-contrib-provider-kubernetes
+spec:
+  skipDependencyResolution: true

@@ -1,0 +1,210 @@
+# =============================================================================
+# KubeVirt ARM64 mpx-strip fix — DaemonSet + supporting ConfigMap
+#
+# Problem: KubeVirt v1.3.x adds <feature policy="disable" name="mpx"/> to
+# every VM domain XML on ARM64.  "mpx" is an x86 Intel Memory Protection
+# Extension that does not exist on ARM:
+#   1. libvirt's ARM CPU validator rejects it  →  "unknown CPU feature: mpx"
+#   2. QEMU's cortex-a57 model rejects mpx=off →  "Property not found"
+#
+# Fix (two-step, applied per virt-launcher container at runtime):
+#   1. Append a dummy <feature name="mpx"/> to arm_features.xml so libvirt's
+#      ARM validator stops rejecting the feature name.
+#   2. Replace /usr/libexec/qemu-kvm with a thin wrapper that strips ",mpx=off"
+#      from the -cpu argument before forwarding to the real binary.
+#   3. Restart virtqemud inside the container so it reloads arm_features.xml.
+#
+# This DaemonSet runs on every worker node, watches the containerd task
+# directory for new virt-launcher containers, and applies the patch within
+# seconds of container creation — before virtqemud first attempts to define
+# the domain.
+#
+# Idempotency: the presence of qemu-kvm.real is the sentinel; already-patched
+# containers are skipped on every poll cycle.
+# =============================================================================
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevirt-arm64-mpx-fix-scripts
+  namespace: kubevirt
+  labels:
+    app: kubevirt-arm64-mpx-fix
+    app.kubernetes.io/managed-by: platform-idp
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  # ── watcher.sh ─────────────────────────────────────────────────────────────
+  # Runs inside the DaemonSet container (Alpine /bin/sh / busybox ash).
+  # Polls for new virt-launcher containers and applies the two-step fix.
+  #
+  # Sentinel files used for idempotency (written into container overlay):
+  #   qemu-kvm.real          — QEMU wrapper installed (step 2 done)
+  #   qemu-kvm.vqd-restarted — virtqemud restarted (step 3 done)
+  watcher.sh: |
+    #!/bin/sh
+    TASKS_DIR="/containerd-tasks"
+    WRAPPER_SRC="/scripts/qemu-kvm-wrapper.sh"
+
+    echo "$(date -u): kubevirt-arm64-mpx-fix watcher started on $(hostname)"
+
+    restart_virtqemud() {
+      ROOTFS_DIR="$1"
+      CID=$(echo "${ROOTFS_DIR}" | awk -F/ '{print $(NF-1)}')
+      INIT_PID_FILE="${TASKS_DIR}/${CID}/init.pid"
+      [ -f "${INIT_PID_FILE}" ] || return 0
+      INIT_PID=$(cat "${INIT_PID_FILE}" 2>/dev/null)
+      [ -z "${INIT_PID}" ] && return 0
+      INIT_NS=$(readlink "/proc/${INIT_PID}/ns/pid" 2>/dev/null)
+      [ -z "${INIT_NS}" ] && return 0
+      FOUND=false
+      for PID in $(pgrep -f virtqemud 2>/dev/null); do
+        PID_NS=$(readlink "/proc/${PID}/ns/pid" 2>/dev/null)
+        [ -z "${PID_NS}" ] && continue
+        if [ "${PID_NS}" = "${INIT_NS}" ]; then
+          kill -TERM "${PID}" 2>/dev/null
+          echo "$(date -u): Restarted virtqemud PID=${PID} (CID=${CID})"
+          FOUND=true
+        fi
+      done
+      ${FOUND} && touch "${ROOTFS_DIR}/usr/libexec/qemu-kvm.vqd-restarted" 2>/dev/null || true
+    }
+
+    while true; do
+      PATCHED=false
+
+      for ARM_XML in "${TASKS_DIR}"/*/rootfs/usr/share/libvirt/cpu_map/arm_features.xml; do
+        [ -f "${ARM_XML}" ] || continue
+
+        ROOTFS="${ARM_XML%/usr/share/libvirt/cpu_map/arm_features.xml}"
+        QEMU_BIN="${ROOTFS}/usr/libexec/qemu-kvm"
+        QEMU_REAL="${ROOTFS}/usr/libexec/qemu-kvm.real"
+        VQD_DONE="${ROOTFS}/usr/libexec/qemu-kvm.vqd-restarted"
+
+        # Step 1+2: install wrapper if not yet done
+        if [ ! -f "${QEMU_REAL}" ] && [ -f "${QEMU_BIN}" ]; then
+          echo "$(date -u): New container: ${ROOTFS}"
+
+          if ! grep -q 'name="mpx"' "${ARM_XML}" 2>/dev/null; then
+            awk '/<\/cpus>/{print "  <feature name=\"mpx\"/>"}1' \
+                "${ARM_XML}" > "${ARM_XML}.tmp" && mv "${ARM_XML}.tmp" "${ARM_XML}"
+            echo "$(date -u): Patched arm_features.xml"
+          fi
+
+          cp "${QEMU_BIN}" "${QEMU_REAL}"
+          cp "${WRAPPER_SRC}" "${QEMU_BIN}"
+          chmod +x "${QEMU_BIN}"
+          echo "$(date -u): Installed QEMU mpx-strip wrapper"
+          PATCHED=true
+        fi
+
+        # Step 3: restart virtqemud if wrapper is installed but daemon not yet restarted
+        if [ -f "${QEMU_REAL}" ] && [ ! -f "${VQD_DONE}" ]; then
+          restart_virtqemud "${ROOTFS}"
+        fi
+      done
+
+      [ "${PATCHED}" = "true" ] && sleep 5
+      sleep 3
+    done
+
+  # ── qemu-kvm-wrapper.sh ────────────────────────────────────────────────────
+  # Copied TO the virt-launcher container's /usr/libexec/qemu-kvm.
+  # Executed by bash INSIDE virt-launcher (quay.io/kubevirt/virt-launcher is
+  # RHEL-based and ships bash).  Uses bash arrays for safe arg reconstruction.
+  qemu-kvm-wrapper.sh: |
+    #!/bin/bash
+    # ARM64 mpx-strip wrapper for KubeVirt v1.3.x
+    # Removes ",mpx=off" from the QEMU -cpu argument before exec-ing real QEMU.
+    ARGS=()
+    NEXT_IS_CPU=false
+    for arg in "$@"; do
+      if ${NEXT_IS_CPU}; then
+        # Strip every form mpx=off can appear in the cpu spec
+        arg="${arg//,mpx=off/}"
+        arg="${arg//mpx=off,/}"
+        arg="${arg//mpx=off/}"
+        NEXT_IS_CPU=false
+      fi
+      [ "${arg}" = "-cpu" ] && NEXT_IS_CPU=true
+      ARGS+=("${arg}")
+    done
+    exec /usr/libexec/qemu-kvm.real "${ARGS[@]}"
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kubevirt-arm64-mpx-fix
+  namespace: kubevirt
+  labels:
+    app: kubevirt-arm64-mpx-fix
+    app.kubernetes.io/managed-by: platform-idp
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  selector:
+    matchLabels:
+      app: kubevirt-arm64-mpx-fix
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: kubevirt-arm64-mpx-fix
+    spec:
+      # hostPID lets us enumerate /proc/<pid>/ns/pid for all host processes
+      # so we can locate and signal virtqemud running inside container namespaces.
+      hostPID: true
+
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+        - name: mpx-fix
+          # Locally-built single-platform wrapper around alpine:3.19 — registry
+          # manifest lists fail `kind load` under Docker's containerd store,
+          # and Never-pull keeps the demo offline-capable. Built by bootstrap.sh.
+          image: ipp-platform/mpx-alpine:3.19
+          imagePullPolicy: Never
+          command: ["/bin/sh", "/scripts/watcher.sh"]
+          securityContext:
+            privileged: true       # must write to container overlay rootfs
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            # The containerd task directory contains every running container's
+            # overlayfs rootfs.  HostToContainer propagation is REQUIRED so the
+            # host's individual overlay submounts (one per container) are visible
+            # inside this DaemonSet pod — without it the rootfs directories are
+            # empty bind-mounts that don't expose the underlying overlay layers.
+            - name: containerd-tasks
+              mountPath: /containerd-tasks
+              mountPropagation: HostToContainer
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+
+      volumes:
+        - name: containerd-tasks
+          hostPath:
+            path: /run/containerd/io.containerd.runtime.v2.task/k8s.io
+            type: DirectoryOrCreate
+        - name: scripts
+          configMap:
+            name: kubevirt-arm64-mpx-fix-scripts
+            defaultMode: 0755

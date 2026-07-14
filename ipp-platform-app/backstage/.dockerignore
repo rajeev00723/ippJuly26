@@ -1,0 +1,9 @@
+node_modules
+packages/app/node_modules
+packages/backend/node_modules
+dist
+dist-types
+coverage
+.cache
+.git
+*.md

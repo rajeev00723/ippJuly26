@@ -1,0 +1,34 @@
+apiVersion: platform.iip.com/v1alpha1
+kind: ThreeTierAppClaim
+metadata:
+  name: ${{ values.applicationName }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app: ${{ values.applicationName }}
+    owner: ${{ values.ownerTeam }}
+    cost-center: ${{ values.costCenter }}
+    environment: ${{ values.environment }}
+    managed-by: backstage-idp
+spec:
+  parameters:
+    namespace: ${{ values.namespace }}
+    frontend:
+      image: ${{ values.frontendImage }}
+      replicas: ${{ values.frontendReplicas }}
+    backend:
+      image: ${{ values.backendImage }}
+      replicas: ${{ values.backendReplicas }}
+    database:
+      storageGB: ${{ values.databaseStorageGB }}
+      version: "${{ values.postgresVersion }}"
+    ingress:
+      host: ${{ values.ingressHost }}
+    owner:
+      team: ${{ values.ownerTeam }}
+      costCenter: ${{ values.costCenter }}
+      environment: ${{ values.environment }}
+  compositionSelector:
+    matchLabels:
+      platform.iip.com/composition: three-tier-app
+  writeConnectionSecretToRef:
+    name: ${{ values.applicationName }}-connection

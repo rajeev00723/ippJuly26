@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backstage-frontend",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": ["--cwd", "ipp-platform-app/backstage", "workspace", "app", "start"],
+      "port": 3000
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+## AIOps Engine – RBAC
+## Grants the aiops-engine ServiceAccount read access to the Kubernetes
+## resources it needs to detect incidents and surface recommendations.
+## Apply: kubectl apply -f aiops/manifests/aiops-rbac.yaml
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiops-engine
+  namespace: aiops
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aiops-engine-reader
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+rules:
+  ## Core workload resources
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - nodes
+      - namespaces
+      - events
+      - services
+      - endpoints
+      - configmaps
+      - replicationcontrollers
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "watch"]
+
+  ## Apps workloads
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+
+  ## Batch workloads
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+
+  ## Autoscaling
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+
+  ## Policy
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+
+  ## Networking
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  ## Metrics API (for kubectl top equivalent queries)
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
+
+  ## Crossplane managed resources and compositions
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources:
+      - compositions
+      - compositionrevisions
+      - compositeresourcedefinitions
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["pkg.crossplane.io"]
+    resources:
+      - providers
+      - configurations
+      - providerrevisions
+      - configurationrevisions
+    verbs: ["get", "list", "watch"]
+
+  ## ArgoCD application resources
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - applicationsets
+      - appprojects
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aiops-engine-reader
+  labels:
+    app: aiops-engine
+    app.kubernetes.io/name: aiops-engine
+    app.kubernetes.io/part-of: idp-platform
+subjects:
+  - kind: ServiceAccount
+    name: aiops-engine
+    namespace: aiops
+roleRef:
+  kind: ClusterRole
+  name: aiops-engine-reader
+  apiGroup: rbac.authorization.k8s.io

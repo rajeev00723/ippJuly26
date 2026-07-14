@@ -1,0 +1,192 @@
+---
+# ServiceAccount: frontend
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: employee-portal
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Service account for the employee-portal frontend workload."
+automountServiceAccountToken: false
+
+---
+# ServiceAccount: backend
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+  namespace: employee-portal
+  labels:
+    app: backend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Service account for the employee-portal backend workload."
+automountServiceAccountToken: false
+
+---
+# ServiceAccount: postgres
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres
+  namespace: employee-portal
+  labels:
+    app: postgres
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Service account for the employee-portal postgres workload."
+automountServiceAccountToken: false
+
+---
+# Role: frontend-role
+# Minimal permissions - frontend only needs to read its own configmap
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: frontend-role
+  namespace: employee-portal
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Minimal RBAC role for the frontend service. Read-only access to its own configmap."
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["frontend-config"]
+    verbs: ["get", "watch"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Role: backend-role
+# Backend needs to read secrets (DB credentials, API keys) and configmaps
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-role
+  namespace: employee-portal
+  labels:
+    app: backend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "RBAC role for the backend service. Read access to secrets and configmaps for configuration."
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["backend-db-credentials", "backend-api-keys", "backend-tls"]
+    verbs: ["get", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["backend-config", "app-config"]
+    verbs: ["get", "watch", "list"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Role: postgres-role
+# Postgres has minimal permissions - only needs its own configmap for initialization scripts
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgres-role
+  namespace: employee-portal
+  labels:
+    app: postgres
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Minimal RBAC role for the postgres service. Read access to initialization configmaps."
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["postgres-init-scripts", "postgres-config"]
+    verbs: ["get", "watch"]
+
+---
+# RoleBinding: frontend-role-binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-role-binding
+  namespace: employee-portal
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: frontend-role
+subjects:
+  - kind: ServiceAccount
+    name: frontend
+    namespace: employee-portal
+
+---
+# RoleBinding: backend-role-binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-role-binding
+  namespace: employee-portal
+  labels:
+    app: backend
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backend-role
+subjects:
+  - kind: ServiceAccount
+    name: backend
+    namespace: employee-portal
+
+---
+# RoleBinding: postgres-role-binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postgres-role-binding
+  namespace: employee-portal
+  labels:
+    app: postgres
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: postgres-role
+subjects:
+  - kind: ServiceAccount
+    name: postgres
+    namespace: employee-portal

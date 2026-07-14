@@ -1,0 +1,82 @@
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: acme-corp
+  title: ACME Corporation
+  description: Root organization group for ACME Corp
+spec:
+  type: organization
+  profile:
+    displayName: ACME Corporation
+    email: info@acme.local
+  children: [developers, platform-engineers, operations-support, security-team, tech-providers]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: developers
+  title: Developers
+  description: Application development team
+spec:
+  type: team
+  profile:
+    displayName: Developers
+    email: developers@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-engineers
+  title: Platform Engineers
+  description: Platform and infrastructure engineering team
+spec:
+  type: team
+  profile:
+    displayName: Platform Engineers
+    email: platform-engineers@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: operations-support
+  title: Operations Support
+  description: Operations and SRE support team
+spec:
+  type: team
+  profile:
+    displayName: Operations Support
+    email: operations-support@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: security-team
+  title: Security Team
+  description: Information security and compliance team
+spec:
+  type: team
+  profile:
+    displayName: Security Team
+    email: security-team@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: tech-providers
+  title: Private Cloud Infrastructure Providers
+  description: Private cloud infrastructure provider team
+spec:
+  type: team
+  profile:
+    displayName: Private Cloud Infrastructure Providers
+    email: tech-providers@acme.local
+  parent: acme-corp
+  children: []

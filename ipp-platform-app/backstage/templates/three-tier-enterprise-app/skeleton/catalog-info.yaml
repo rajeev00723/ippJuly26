@@ -1,0 +1,25 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.applicationName }}
+  title: ${{ values.applicationName | replace("-", " ") | title }}
+  description: Three-tier enterprise application managed by IPP — Infrastructure Platform Portal
+  annotations:
+    github.com/project-slug: amitabhmanish13/${{ values.applicationName }}
+    backstage.io/kubernetes-namespace: ${{ values.namespace }}
+    backstage.io/kubernetes-label-selector: 'app=${{ values.applicationName }}'
+    argocd/app-name: ${{ values.applicationName }}
+    grafana/dashboard-selector: 'namespace=${{ values.namespace }}'
+  labels:
+    environment: ${{ values.environment }}
+    cost-center: ${{ values.costCenter }}
+    team: ${{ values.ownerTeam }}
+    managed-by: backstage-idp
+spec:
+  type: website
+  lifecycle: ${{ values.environment }}
+  owner: ${{ values.ownerTeam }}
+  system: enterprise-apps
+  dependsOn:
+    - component:${{ values.applicationName }}-backend
+    - component:${{ values.applicationName }}-database

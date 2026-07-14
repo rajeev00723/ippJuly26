@@ -1,0 +1,180 @@
+---
+# Namespaces needed by IIP service and bot secret
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ipp-system
+---
+# Bot credentials — used by IIP service to write claims to Gitea
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ipp-bot-credentials
+  namespace: ipp-system
+type: Opaque
+stringData:
+  username: "ipp-automation-bot"
+  password: "ipp-bot-demo-2024"
+  gitea-url: "http://gitea.gitea.svc.cluster.local:3000"
+  repo: "ipp-platform-claims"
+---
+# ServiceAccount for the init job (needs to patch the bot-token secret)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-init
+  namespace: gitea
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gitea-init
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gitea-init
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gitea-init
+subjects:
+  - kind: ServiceAccount
+    name: gitea-init
+    namespace: gitea
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-init
+  namespace: gitea
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      serviceAccountName: gitea-init
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: gitea/gitea:1.22.6
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+
+              GITEA="http://gitea.gitea.svc.cluster.local:3000"
+              ADMIN_USER="gitea-admin"
+              ADMIN_PASS="admin-demo-2024"
+              BOT_USER="ipp-automation-bot"
+              BOT_PASS="ipp-bot-demo-2024"
+              BOT_EMAIL="bot@ipp.local"
+              REPO="ipp-platform-claims"
+
+              echo "=== [1/6] Waiting for Gitea ==="
+              for i in $(seq 1 40); do
+                if curl -sf "${GITEA}/api/v1/version" >/dev/null 2>&1; then
+                  echo "  Gitea ready after ${i} attempts."
+                  break
+                fi
+                echo "  waiting... ($i/40)"
+                sleep 5
+              done
+
+              echo "=== [2/6] Creating bot user ==="
+              HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST "${GITEA}/api/v1/admin/users" \
+                -u "${ADMIN_USER}:${ADMIN_PASS}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"username\":\"${BOT_USER}\",
+                  \"password\":\"${BOT_PASS}\",
+                  \"email\":\"${BOT_EMAIL}\",
+                  \"must_change_password\":false,
+                  \"login_name\":\"${BOT_USER}\",
+                  \"source_id\":0,
+                  \"send_notify\":false
+                }")
+              [ "$HTTP" = "201" ] && echo "  Bot user created." || echo "  Bot user already exists (HTTP $HTTP)."
+
+              echo "=== [3/6] Creating ipp-platform-claims repo ==="
+              HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST "${GITEA}/api/v1/user/repos" \
+                -u "${BOT_USER}:${BOT_PASS}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"name\":\"${REPO}\",
+                  \"description\":\"IPP Platform Claims — sole writer: @ipp-automation-bot\",
+                  \"private\":false,
+                  \"auto_init\":true,
+                  \"default_branch\":\"main\"
+                }")
+              [ "$HTTP" = "201" ] && echo "  Repo created." || echo "  Repo exists (HTTP $HTTP)."
+
+              echo "=== [4/6] Generating bot API token ==="
+              # Delete existing token if present (idempotent)
+              curl -s -X DELETE \
+                "${GITEA}/api/v1/users/${BOT_USER}/tokens/iip-service-token" \
+                -u "${BOT_USER}:${BOT_PASS}" >/dev/null 2>&1 || true
+
+              TOKEN_JSON=$(curl -sf \
+                -X POST "${GITEA}/api/v1/users/${BOT_USER}/tokens" \
+                -u "${BOT_USER}:${BOT_PASS}" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\":\"iip-service-token\",\"scopes\":[\"write:repository\",\"write:issue\",\"read:repository\",\"read:issue\"]}")
+              BOT_TOKEN=$(echo "${TOKEN_JSON}" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
+              echo "  Token: ${BOT_TOKEN:0:8}..."
+
+              echo "=== [5/6] Patching ipp-bot-credentials secret with token ==="
+              BOT_TOKEN_B64=$(echo -n "${BOT_TOKEN}" | base64 | tr -d '\n')
+              K8S_API="https://kubernetes.default.svc"
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CA_CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+              curl -sf --cacert "${CA_CERT}" \
+                -H "Authorization: Bearer ${SA_TOKEN}" \
+                -H "Content-Type: application/json-patch+json" \
+                -X PATCH \
+                "${K8S_API}/api/v1/namespaces/ipp-system/secrets/ipp-bot-credentials" \
+                -d "[{\"op\":\"add\",\"path\":\"/data/token\",\"value\":\"${BOT_TOKEN_B64}\"}]"
+              echo "  Secret patched."
+
+              echo "=== [6/6] Seeding directory structure ==="
+              seed() {
+                local path="$1"; local msg="$2"
+                local enc
+                enc=$(echo -n "" | base64 | tr -d '\n')
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -X POST "${GITEA}/api/v1/repos/${BOT_USER}/${REPO}/contents/${path}" \
+                  -H "Authorization: token ${BOT_TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"message\":\"${msg}\",\"content\":\"${enc}\"}")
+                [ "$HTTP" = "201" ] && echo "  seeded: $path" || echo "  skip (exists): $path"
+              }
+
+              seed "appbox/dev/.gitkeep"     "chore: seed appbox/dev"
+              seed "appbox/prod/.gitkeep"    "chore: seed appbox/prod"
+              seed "clusters/dev/.gitkeep"   "chore: seed clusters/dev"
+              seed "clusters/prod/.gitkeep"  "chore: seed clusters/prod"
+              seed "vms/dev/.gitkeep"        "chore: seed vms/dev"
+              seed "vms/prod/.gitkeep"       "chore: seed vms/prod"
+              seed "databases/dev/.gitkeep"  "chore: seed databases/dev"
+              seed "networks/dev/.gitkeep"   "chore: seed networks/dev"
+
+              # CODEOWNERS
+              CODEOWNERS_B64=$(echo -n "* @ipp-automation-bot" | base64 | tr -d '\n')
+              curl -s -o /dev/null -X POST \
+                "${GITEA}/api/v1/repos/${BOT_USER}/${REPO}/contents/CODEOWNERS" \
+                -H "Authorization: token ${BOT_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"message\":\"chore: add CODEOWNERS\",\"content\":\"${CODEOWNERS_B64}\"}" || true
+
+              echo ""
+              echo "=== Gitea initialisation complete ==="
+              echo "  URL  : http://gitea.ipp.local"
+              echo "  Admin: ${ADMIN_USER} / ${ADMIN_PASS}"
+              echo "  Bot  : ${BOT_USER} / ${BOT_PASS}"
+              echo "  Repo : http://gitea.ipp.local/${BOT_USER}/${REPO}"

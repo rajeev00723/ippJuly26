@@ -1,0 +1,147 @@
+app:
+  title: IPP — Infrastructure Platform Portal
+  baseUrl: http://localhost:3000
+  support:
+    url: https://github.com/amitabhmanish13/IPS_app_demo/issues
+
+organization:
+  name: IPP (Infrastructure Platform Portal)
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+    host: 0.0.0.0
+  auth:
+    dangerouslyDisableDefaultAuthPolicy: true
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+
+auth:
+  environment: development
+  session:
+    secret: ${BACKSTAGE_SESSION_SECRET}
+  providers:
+    guest:
+      dangerouslyAllowOutsideDevelopment: true
+
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+    pullRequestBranchName: backstage-integration
+  rules:
+    - allow: [Component, System, API, Resource, Location, Template, User, Group, Domain]
+  locations:
+    - type: file
+      target: ./catalog-info.yaml
+      rules:
+        - allow: [Component, System, API, Resource, Location, Template, User, Group, Domain]
+    - type: file
+      target: ../../catalog/catalog-info.yaml
+      rules:
+        - allow: [Component, System, API, Resource, Location, Template, User, Group, Domain]
+    # Deprecated individual templates — file preserved on disk but NOT registered.
+    # All 10 templates are superseded by templates-consolidated.yaml.
+    # Uncomment only for rollback: target: ../../catalog/templates.yaml
+    - type: file
+      target: ../../catalog/templates-consolidated.yaml
+      rules:
+        - allow: [Template]
+
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+
+scaffolder:
+  defaultAuthor:
+    name: IPP Platform Bot
+    email: platform@acme.local
+  defaultCommitMessage: "feat: scaffold enterprise application via IPP"
+
+kubernetes:
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods:
+    - type: config
+      clusters:
+        - url: https://kubernetes.default.svc
+          name: idp-demo-cluster
+          authProvider: serviceAccount
+          skipTLSVerify: true
+          serviceAccountToken: ${K8S_SA_TOKEN}
+          caData: ${K8S_CA_DATA}
+
+proxy:
+  '/iip':
+    target: http://iip-service.ipp-system.svc.cluster.local
+    changeOrigin: true
+  '/argocd/api':
+    target: http://argocd-server.argocd.svc.cluster.local/api/v1/
+    changeOrigin: true
+    headers:
+      Cookie: argocd.token=${ARGOCD_TOKEN}
+  '/prometheus/api':
+    target: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/
+    changeOrigin: true
+  '/opencost/api':
+    target: http://opencost.opencost.svc.cluster.local:9090/
+    changeOrigin: true
+  '/aiops/api':
+    target: http://aiops-engine.aiops.svc.cluster.local:8000/
+    changeOrigin: true
+  '/karmada/api':
+    # Karmada aggregated API server (unreachable by default — safe to leave as-is).
+    # Override in app-config.local.yaml: set target to your Karmada API server URL
+    # and add Authorization header with a valid service-account token.
+    target: http://karmada-apiserver.karmada-system.svc.cluster.local:5443
+    changeOrigin: true
+    secure: false
+
+techdocs:
+  builder: local
+  generator:
+    runIn: local
+  publisher:
+    type: local
+    local:
+      publishDirectory: /app/techdocs-storage
+
+# ── Karmada multi-cluster (optional) ─────────────────────────────────────────
+# Set KARMADA_ENABLED=true in your environment (or app-config.local.yaml) to
+# show the Karmada nav item and connect to a real Karmada control plane.
+# When false (the default), the /karmada route still exists but the nav link is
+# hidden and the page shows demo data — all other routes are unaffected.
+karmada:
+  enabled: true
+
+# ── Knative serverless demo (optional) ───────────────────────────────────────
+# Set knative.demoEnabled: true (or export ENABLE_KNATIVE_DEMO=true and use
+# app-config.local.yaml with `knative: { demoEnabled: true }`) to surface the
+# Knative runtime option in onboarding, the /knative dashboard, the FinOps
+# scale-to-zero card, and the AIOps runtime signal.
+# When false (default) zero Knative UI is rendered and all existing flows are
+# completely unaffected.
+knative:
+  demoEnabled: false
+
+# ── Infra onboarding wizard demo mode (optional) ─────────────────────────────
+# Set infraOnboarding.demoMode: true to force the onboarding wizard to always
+# use the labeled client-side simulation instead of calling the real IIP
+# service — useful when presenting offline (no cluster reachable). When false
+# (default) the wizard calls the real IIP /api/provision and /api/status
+# endpoints, and only falls back to simulation automatically if IIP itself is
+# unreachable (the flow never breaks either way).
+infraOnboarding:
+  demoMode: false

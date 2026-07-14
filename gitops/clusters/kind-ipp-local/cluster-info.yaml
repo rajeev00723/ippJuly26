@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipp-cluster-info
+  namespace: crossplane-system
+  labels:
+    platform.ipp.dhl.com/component: cluster-info
+    platform.ipp.dhl.com/cluster: kind-ipp-local
+data:
+  clusterName: kind-ipp-local
+  environment: dev
+  provider: kind
+  region: local
+  managedBy: ipp-platform

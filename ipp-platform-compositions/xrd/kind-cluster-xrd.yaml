@@ -1,0 +1,101 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xkindclusters.platform.iip.com
+  labels:
+    platform.iip.com/component: xrd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  group: platform.iip.com
+
+  names:
+    kind: XKindCluster
+    plural: xkindclusters
+
+  claimNames:
+    kind: KindClusterClaim
+    plural: kindclusterclaims
+
+  connectionSecretKeys:
+    - kubeconfig
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - parameters
+              properties:
+                parameters:
+                  type: object
+                  required:
+                    - clusterName
+                    - environment
+                    - ownerTeam
+                  properties:
+                    clusterName:
+                      type: string
+                      description: Name for the KIND cluster
+                    nodeCount:
+                      type: integer
+                      description: Number of worker nodes
+                      default: 1
+                      minimum: 1
+                      maximum: 3
+                    kubernetesVersion:
+                      type: string
+                      description: Kubernetes version (e.g. 1.29)
+                      default: "1.29"
+                    environment:
+                      type: string
+                      enum: [dev, staging, prod]
+                    ownerTeam:
+                      type: string
+                    costCenter:
+                      type: string
+                      default: demo-001
+                    enableArgoCD:
+                      type: boolean
+                      default: false
+                    enableMonitoring:
+                      type: boolean
+                      default: true
+            status:
+              type: object
+              properties:
+                clusterReady:
+                  type: boolean
+                kubeconfigSecret:
+                  type: string
+                cloudType:
+                  type: string
+                  description: Private vs public cloud classification (platform.ipp.dhl.com/cloud-type)
+      additionalPrinterColumns:
+        - name: CLUSTER
+          type: string
+          jsonPath: ".spec.parameters.clusterName"
+        - name: ENVIRONMENT
+          type: string
+          jsonPath: ".spec.parameters.environment"
+        - name: NODES
+          type: integer
+          jsonPath: ".spec.parameters.nodeCount"
+        - name: CLOUD
+          type: string
+          jsonPath: ".status.cloudType"
+        - name: SYNCED
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Synced')].status"
+        - name: READY
+          type: string
+          jsonPath: ".status.conditions[?(@.type=='Ready')].status"
+        - name: AGE
+          type: date
+          jsonPath: ".metadata.creationTimestamp"

@@ -1,0 +1,14 @@
+# Backup artifacts
+*.bak
+*.orig
+
+# Sensitive files — claims must never contain raw secrets
+*.secret.yaml
+*-secret.yaml
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

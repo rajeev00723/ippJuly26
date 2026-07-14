@@ -1,0 +1,41 @@
+# DeploymentRuntimeConfig replaces the removed ControllerConfig (v1alpha1)
+# which was dropped in Crossplane v2.0 / UXP v2.x.
+# Configures the provider-helm pod: SA, security context, resources.
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-helm-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "-6"
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          serviceAccountName: provider-helm
+          containers:
+            - name: package-runtime
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 2000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+          nodeSelector:
+            kubernetes.io/os: linux
+# Provider-helm is installed by the UXP Helm chart (upbound-crossplane-values.yaml
+# provider.packages) as crossplane-contrib-provider-helm. Defining a second Provider
+# object for the same package image causes a Crossplane lock-graph duplicate-node error
+# that breaks all function revisions. The Provider object is intentionally omitted here.

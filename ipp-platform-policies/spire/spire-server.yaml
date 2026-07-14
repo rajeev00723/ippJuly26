@@ -1,0 +1,330 @@
+---
+# ServiceAccount for SPIRE Server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spire-server
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+
+---
+# ClusterRole for SPIRE Server to access Kubernetes API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-server-cluster-role
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+---
+# ClusterRoleBinding for SPIRE Server
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-cluster-role-binding
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-server-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: spire
+
+---
+# Role for SPIRE Server to manage its own namespace resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spire-server-role
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding for SPIRE Server in spire namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spire-server-role-binding
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spire-server-role
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: spire
+
+---
+# ConfigMap for SPIRE Server configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+data:
+  server.conf: |
+    server {
+      bind_address = "0.0.0.0"
+      bind_port = "8081"
+      socket_path = "/tmp/spire-server/private/api.sock"
+      trust_domain = "ipp-platform.local"
+      data_dir = "/run/spire/data"
+      log_level = "DEBUG"
+      log_format = "text"
+      ca_ttl = "24h"
+      default_x509_svid_ttl = "1h"
+      default_jwt_svid_ttl = "5m"
+
+      ca_subject {
+        country = ["US"]
+        organization = ["IPP — Infrastructure Platform Portal"]
+        common_name = "ipp-platform.local"
+      }
+    }
+
+    plugins {
+      DataStore "sql" {
+        plugin_data {
+          database_type = "sqlite3"
+          connection_string = "/run/spire/data/datastore.sqlite3"
+        }
+      }
+
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          clusters = {
+            "kind-ipp-local" = {
+              service_account_allow_list = ["spire:spire-agent"]
+              audience = ["spire-server"]
+            }
+          }
+        }
+      }
+
+      KeyManager "disk" {
+        plugin_data {
+          keys_path = "/run/spire/data/keys.json"
+        }
+      }
+
+      Notifier "k8sbundle" {
+        plugin_data {
+          namespace = "spire"
+          config_map = "spire-bundle"
+          config_map_key = "bundle.crt"
+        }
+      }
+    }
+
+    health_checks {
+      listener_enabled = true
+      bind_address = "0.0.0.0"
+      bind_port = "8080"
+      live_path = "/live"
+      ready_path = "/ready"
+    }
+
+---
+# PersistentVolumeClaim for SPIRE Server data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spire-data
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Service for SPIRE Server (federation and OIDC)
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  selector:
+    app: spire-server
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+    - name: health
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+
+---
+# StatefulSet for SPIRE Server
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spire-server
+  namespace: spire
+  labels:
+    app: spire-server
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spire-server
+  serviceName: spire-server
+  template:
+    metadata:
+      labels:
+        app: spire-server
+        app.kubernetes.io/managed-by: ipp-platform
+        environment: demo
+        owner: platform-team
+        cost-center: platform
+    spec:
+      serviceAccountName: spire-server
+      shareProcessNamespace: true
+
+      initContainers:
+        - name: init-ca
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /run/spire/data
+              mkdir -p /tmp/spire-server/private
+              echo "Init container: ensuring data directories exist"
+              ls -la /run/spire/data || true
+          volumeMounts:
+            - name: spire-data
+              mountPath: /run/spire/data
+            - name: spire-server-socket
+              mountPath: /tmp/spire-server/private
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+      containers:
+        - name: spire-server
+          image: ghcr.io/spiffe/spire-server:1.9.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config
+            - /run/spire/config/server.conf
+          ports:
+            - name: grpc
+              containerPort: 8081
+              protocol: TCP
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          volumeMounts:
+            - name: spire-config
+              mountPath: /run/spire/config
+              readOnly: true
+            - name: spire-data
+              mountPath: /run/spire/data
+            - name: spire-server-socket
+              mountPath: /tmp/spire-server/private
+
+      volumes:
+        - name: spire-config
+          configMap:
+            name: spire-server
+        - name: spire-server-socket
+          emptyDir: {}
+        - name: spire-data
+          persistentVolumeClaim:
+            claimName: spire-data

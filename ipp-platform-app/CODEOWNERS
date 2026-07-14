@@ -1,0 +1,12 @@
+# ipp-platform-app — Code Owners
+# All changes require review from @ipp-platform-ops.
+* @ipp-platform-ops
+
+# AIOps service changes (Python)
+/aiops/ @ipp-platform-ops
+
+# Backstage plugin changes
+/backstage/plugins/ @ipp-platform-ops
+
+# Security-sensitive deploy manifests
+/deploy/ @ipp-platform-ops @ipp-security-eng

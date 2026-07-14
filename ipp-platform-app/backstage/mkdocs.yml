@@ -1,0 +1,40 @@
+site_name: "IPP — Infrastructure Platform Portal"
+site_description: "DHL Infrastructure Platform Portal: developer documentation, operations guides, and AIOps reference."
+site_author: "DHL Platform Engineering"
+docs_dir: docs
+
+theme:
+  name: material
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Operations:
+      - Overview: operations/index.md
+      - Security Dashboard: operations/security.md
+      - Cost Dashboard: operations/cost.md
+  - Control Plane:
+      - Overview: control-plane/index.md
+      - Crossplane: control-plane/crossplane.md
+      - GitOps (Argo CD): control-plane/gitops.md
+      - AIOps Overview: control-plane/aiops-overview.md
+  - AIOps Agent Command Center:
+      - Introduction: aiops/index.md
+      - Manager Agent: aiops/manager-agent.md
+      - Worker Agents: aiops/worker-agents.md
+      - Telemetry Sources: aiops/telemetry-sources.md
+      - Example Walkthrough: aiops/example-walkthrough.md
+      - Confidence & Severity: aiops/scoring.md
+  - Advanced:
+      - FinOps Visibility: advanced/finops.md
+      - Autonomous Ops: advanced/autonomous-ops.md
+      - Settings: advanced/settings.md
+  - Platform Engineering:
+      - Onboard App: platform-engineering/onboard-app.md
+      - My Resources: platform-engineering/my-resources.md
+      - Day 2 Operations: platform-engineering/day2-ops.md
+      - Infra Costs: platform-engineering/infra-costs.md
+  - Troubleshooting & FAQ: troubleshooting.md

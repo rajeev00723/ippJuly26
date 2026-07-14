@@ -1,0 +1,1415 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: three-tier-app
+  labels:
+    platform.iip.com/composition: three-tier-app
+    platform.iip.com/version: v1alpha1
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  # Link to the XRD
+  compositeTypeRef:
+    apiVersion: platform.iip.com/v1alpha1
+    kind: XThreeTierApp
+
+  # Use the Patch & Transform pipeline mode
+  mode: Pipeline
+
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: crossplane-contrib-function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+
+          # ===========================================================
+          # 1. Namespace
+          # ===========================================================
+          - name: namespace
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Namespace
+                    metadata:
+                      name: ""
+                      labels:
+                        platform.iip.com/managed: "true"
+                        platform.iip.com/team: ""
+                        platform.iip.com/cost-center: ""
+                        platform.iip.com/environment: ""
+                        platform.ipp.dhl.com/cloud-type: private
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-ns"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.owner.team
+                toFieldPath: spec.forProvider.manifest.metadata.labels["platform.iip.com/team"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.owner.costCenter
+                toFieldPath: spec.forProvider.manifest.metadata.labels["platform.iip.com/cost-center"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.owner.environment
+                toFieldPath: spec.forProvider.manifest.metadata.labels["platform.iip.com/environment"]
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 2. ResourceQuota
+          # ===========================================================
+          - name: resource-quota
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ResourceQuota
+                    metadata:
+                      name: app-quota
+                      namespace: ""
+                    spec:
+                      hard:
+                        requests.cpu: "4"
+                        requests.memory: "8Gi"
+                        limits.cpu: "8"
+                        limits.memory: "16Gi"
+                        pods: "50"
+                        services: "20"
+                        persistentvolumeclaims: "10"
+                        secrets: "50"
+                        configmaps: "50"
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-quota"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 3. LimitRange
+          # ===========================================================
+          - name: limit-range
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: LimitRange
+                    metadata:
+                      name: app-limits
+                      namespace: ""
+                    spec:
+                      limits:
+                        - type: Container
+                          default:
+                            cpu: "500m"
+                            memory: "512Mi"
+                          defaultRequest:
+                            cpu: "100m"
+                            memory: "128Mi"
+                          max:
+                            cpu: "2"
+                            memory: "2Gi"
+                          min:
+                            cpu: "10m"
+                            memory: "32Mi"
+                        - type: Pod
+                          max:
+                            cpu: "4"
+                            memory: "4Gi"
+                        - type: PersistentVolumeClaim
+                          max:
+                            storage: "50Gi"
+                          min:
+                            storage: "1Gi"
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-limitrange"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 4. ServiceAccount - frontend
+          # ===========================================================
+          - name: sa-frontend
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ServiceAccount
+                    metadata:
+                      name: frontend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/component: frontend
+                        app.kubernetes.io/part-of: three-tier-app
+                    automountServiceAccountToken: false
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-sa-frontend"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 5. ServiceAccount - backend
+          # ===========================================================
+          - name: sa-backend
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ServiceAccount
+                    metadata:
+                      name: backend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/component: backend
+                        app.kubernetes.io/part-of: three-tier-app
+                    automountServiceAccountToken: false
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-sa-backend"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 6. ServiceAccount - postgres
+          # ===========================================================
+          - name: sa-postgres
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ServiceAccount
+                    metadata:
+                      name: postgres
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/component: database
+                        app.kubernetes.io/part-of: three-tier-app
+                    automountServiceAccountToken: false
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-sa-postgres"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 7. PostgreSQL Secret (credentials)
+          # ===========================================================
+          - name: postgres-secret
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Secret
+                    metadata:
+                      name: postgres-credentials
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/component: database
+                        app.kubernetes.io/part-of: three-tier-app
+                    type: Opaque
+                    stringData:
+                      POSTGRES_DB: appdb
+                      POSTGRES_USER: appuser
+                      # SECURITY: replace this placeholder with a value patched from the
+                      # claim parameter spec.parameters.postgresPassword, or inject via
+                      # an ExternalSecret / Vault reference before production use.
+                      POSTGRES_PASSWORD: "REPLACE-WITH-SECURE-PASSWORD"
+                      host: postgres
+                      port: "5432"
+                      database: appdb
+                      username: appuser
+                      password: "REPLACE-WITH-SECURE-PASSWORD"
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-postgres-secret"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 8. PostgreSQL StatefulSet
+          # ===========================================================
+          - name: postgres-statefulset
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: StatefulSet
+                    metadata:
+                      name: postgres
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: postgres
+                        app.kubernetes.io/component: database
+                        app.kubernetes.io/part-of: three-tier-app
+                        platform.ipp.dhl.com/cloud-type: private
+                    spec:
+                      serviceName: postgres
+                      replicas: 1
+                      selector:
+                        matchLabels:
+                          app: postgres
+                      template:
+                        metadata:
+                          labels:
+                            app: postgres
+                            app.kubernetes.io/name: postgres
+                            app.kubernetes.io/component: database
+                        spec:
+                          serviceAccountName: postgres
+                          securityContext:
+                            runAsNonRoot: true
+                            runAsUser: 999
+                            runAsGroup: 999
+                            fsGroup: 999
+                          containers:
+                            - name: postgres
+                              # Image will be patched with version parameter
+                              image: "postgres:16-alpine"
+                              imagePullPolicy: IfNotPresent
+                              ports:
+                                - containerPort: 5432
+                                  name: postgres
+                                  protocol: TCP
+                              envFrom:
+                                - secretRef:
+                                    name: postgres-credentials
+                              env:
+                                - name: PGDATA
+                                  value: /var/lib/postgresql/data/pgdata
+                              resources:
+                                requests:
+                                  cpu: "100m"
+                                  memory: "256Mi"
+                                limits:
+                                  cpu: "500m"
+                                  memory: "512Mi"
+                              volumeMounts:
+                                - name: postgres-data
+                                  mountPath: /var/lib/postgresql/data
+                              livenessProbe:
+                                exec:
+                                  command:
+                                    - pg_isready
+                                    - -U
+                                    - appuser
+                                    - -d
+                                    - appdb
+                                initialDelaySeconds: 30
+                                periodSeconds: 10
+                                timeoutSeconds: 5
+                                failureThreshold: 6
+                              readinessProbe:
+                                exec:
+                                  command:
+                                    - pg_isready
+                                    - -U
+                                    - appuser
+                                    - -d
+                                    - appdb
+                                initialDelaySeconds: 5
+                                periodSeconds: 5
+                                timeoutSeconds: 3
+                                failureThreshold: 3
+                              securityContext:
+                                allowPrivilegeEscalation: false
+                                readOnlyRootFilesystem: false
+                                capabilities:
+                                  drop:
+                                    - ALL
+                      volumeClaimTemplates:
+                        - metadata:
+                            name: postgres-data
+                          spec:
+                            accessModes:
+                              - ReadWriteOnce
+                            resources:
+                              requests:
+                                # storageGB will be patched
+                                storage: "10Gi"
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-postgres-sts"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              # Patch image with version parameter
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.database.version
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].image
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "postgres:%s-alpine"
+              # Patch storage size
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.database.storageGB
+                toFieldPath: spec.forProvider.manifest.spec.volumeClaimTemplates[0].spec.resources.requests.storage
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%.0fGi"
+              # Propagate databaseReady status
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.readyReplicas
+                toFieldPath: status.databaseReady
+                transforms:
+                  - type: convert
+                    convert:
+                      toType: string
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: "^[1-9][0-9]*$"
+                          result: "true"
+                      fallbackValue: "false"
+                policy:
+                  fromFieldPath: Optional
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.readyReplicas
+
+          # ===========================================================
+          # 9. PostgreSQL Service
+          # ===========================================================
+          - name: postgres-service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: postgres
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: postgres
+                        app.kubernetes.io/component: database
+                        app.kubernetes.io/part-of: three-tier-app
+                    spec:
+                      type: ClusterIP
+                      selector:
+                        app: postgres
+                      ports:
+                        - name: postgres
+                          port: 5432
+                          targetPort: 5432
+                          protocol: TCP
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-postgres-svc"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 10. Backend Deployment
+          # ===========================================================
+          - name: backend-deployment
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    metadata:
+                      name: backend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: backend
+                        app.kubernetes.io/component: backend
+                        app.kubernetes.io/part-of: three-tier-app
+                        platform.ipp.dhl.com/cloud-type: private
+                    spec:
+                      replicas: 2
+                      selector:
+                        matchLabels:
+                          app: backend
+                      strategy:
+                        type: RollingUpdate
+                        rollingUpdate:
+                          maxSurge: 1
+                          maxUnavailable: 0
+                      template:
+                        metadata:
+                          labels:
+                            app: backend
+                            app.kubernetes.io/name: backend
+                            app.kubernetes.io/component: backend
+                        spec:
+                          serviceAccountName: backend
+                          securityContext:
+                            runAsNonRoot: true
+                            runAsUser: 1000
+                            runAsGroup: 1000
+                            fsGroup: 1000
+                          containers:
+                            - name: backend
+                              image: "ipp-platform/employee-backend:latest"
+                              imagePullPolicy: IfNotPresent
+                              ports:
+                                - containerPort: 8080
+                                  name: http
+                                  protocol: TCP
+                              env:
+                                - name: DB_HOST
+                                  value: postgres
+                                - name: DB_PORT
+                                  value: "5432"
+                                - name: DB_NAME
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: postgres-credentials
+                                      key: POSTGRES_DB
+                                - name: DB_USER
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: postgres-credentials
+                                      key: POSTGRES_USER
+                                - name: DB_PASSWORD
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: postgres-credentials
+                                      key: POSTGRES_PASSWORD
+                              resources:
+                                requests:
+                                  cpu: "100m"
+                                  memory: "128Mi"
+                                limits:
+                                  cpu: "500m"
+                                  memory: "512Mi"
+                              livenessProbe:
+                                httpGet:
+                                  path: /health
+                                  port: 8080
+                                initialDelaySeconds: 15
+                                periodSeconds: 10
+                                timeoutSeconds: 5
+                                failureThreshold: 3
+                              readinessProbe:
+                                httpGet:
+                                  path: /ready
+                                  port: 8080
+                                initialDelaySeconds: 5
+                                periodSeconds: 5
+                                timeoutSeconds: 3
+                                failureThreshold: 3
+                              securityContext:
+                                allowPrivilegeEscalation: false
+                                readOnlyRootFilesystem: true
+                                capabilities:
+                                  drop:
+                                    - ALL
+                              volumeMounts:
+                                - name: tmp
+                                  mountPath: /tmp
+                          volumes:
+                            - name: tmp
+                              emptyDir: {}
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-backend-deploy"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.backend.image
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].image
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.backend.replicas
+                toFieldPath: spec.forProvider.manifest.spec.replicas
+              # Status propagation
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.availableReplicas
+                toFieldPath: status.backendReady
+                transforms:
+                  - type: convert
+                    convert:
+                      toType: string
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: "^[1-9][0-9]*$"
+                          result: "true"
+                      fallbackValue: "false"
+                policy:
+                  fromFieldPath: Optional
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.availableReplicas
+
+          # ===========================================================
+          # 11. Backend Service
+          # ===========================================================
+          - name: backend-service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: backend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: backend
+                        app.kubernetes.io/component: backend
+                        app.kubernetes.io/part-of: three-tier-app
+                    spec:
+                      type: ClusterIP
+                      selector:
+                        app: backend
+                      ports:
+                        - name: http
+                          port: 8080
+                          targetPort: 8080
+                          protocol: TCP
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-backend-svc"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 12. Frontend Deployment
+          # ===========================================================
+          - name: frontend-deployment
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    metadata:
+                      name: frontend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: frontend
+                        app.kubernetes.io/component: frontend
+                        app.kubernetes.io/part-of: three-tier-app
+                        platform.ipp.dhl.com/cloud-type: private
+                    spec:
+                      replicas: 2
+                      selector:
+                        matchLabels:
+                          app: frontend
+                      strategy:
+                        type: RollingUpdate
+                        rollingUpdate:
+                          maxSurge: 1
+                          maxUnavailable: 0
+                      template:
+                        metadata:
+                          labels:
+                            app: frontend
+                            app.kubernetes.io/name: frontend
+                            app.kubernetes.io/component: frontend
+                        spec:
+                          serviceAccountName: frontend
+                          securityContext:
+                            runAsNonRoot: true
+                            runAsUser: 101
+                            runAsGroup: 101
+                          containers:
+                            - name: frontend
+                              image: "ipp-platform/employee-frontend:latest"
+                              imagePullPolicy: IfNotPresent
+                              ports:
+                                - containerPort: 8080
+                                  name: http
+                                  protocol: TCP
+                              env:
+                                - name: BACKEND_URL
+                                  value: "http://backend:8080"
+                                - name: API_BASE_URL
+                                  value: "http://backend:8080/api"
+                                # FQDN used by nginx envsubst template — patched below from spec.parameters.namespace
+                                - name: BACKEND_SVC_URL
+                                  value: "http://backend:8080"
+                              resources:
+                                requests:
+                                  cpu: "50m"
+                                  memory: "64Mi"
+                                limits:
+                                  cpu: "200m"
+                                  memory: "256Mi"
+                              livenessProbe:
+                                httpGet:
+                                  path: /
+                                  port: 8080
+                                initialDelaySeconds: 10
+                                periodSeconds: 10
+                                timeoutSeconds: 5
+                                failureThreshold: 3
+                              readinessProbe:
+                                httpGet:
+                                  path: /
+                                  port: 8080
+                                initialDelaySeconds: 5
+                                periodSeconds: 5
+                                timeoutSeconds: 3
+                                failureThreshold: 3
+                              securityContext:
+                                allowPrivilegeEscalation: false
+                                capabilities:
+                                  drop:
+                                    - ALL
+                              volumeMounts:
+                                - name: nginx-cache
+                                  mountPath: /var/cache/nginx
+                                - name: nginx-run
+                                  mountPath: /var/run
+                                - name: tmp
+                                  mountPath: /tmp
+                          volumes:
+                            - name: nginx-cache
+                              emptyDir: {}
+                            - name: nginx-run
+                              emptyDir: {}
+                            - name: tmp
+                              emptyDir: {}
+                providerConfigRef:
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-frontend-deploy"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.frontend.image
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].image
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.frontend.replicas
+                toFieldPath: spec.forProvider.manifest.spec.replicas
+              # Patch BACKEND_SVC_URL with FQDN so nginx envsubst resolves correctly
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[2].value
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "http://backend.%s.svc.cluster.local:8080"
+              # Volume[3] configMap name is always frontend-nginx-config (managed by frontend-nginx-configmap resource)
+              # No patch needed — name is fixed in the base manifest above
+              # Status propagation
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.manifest.status.availableReplicas
+                toFieldPath: status.frontendReady
+                transforms:
+                  - type: convert
+                    convert:
+                      toType: string
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: "^[1-9][0-9]*$"
+                          result: "true"
+                      fallbackValue: "false"
+                policy:
+                  fromFieldPath: Optional
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.manifest.status.availableReplicas
+
+          # ===========================================================
+          # 13. Frontend nginx ConfigMap (FQDN backend upstream)
+          # ===========================================================
+          - name: frontend-nginx-configmap
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: frontend-nginx-config
+                      namespace: ""
+                    data:
+                      default.conf: |
+                        server {
+                            listen 80;
+                            server_name _;
+                            root /usr/share/nginx/html;
+                            index index.html;
+                            resolver 10.96.0.10 valid=5s ipv6=off;
+                            set $backend_upstream BACKEND_SVC_URL_PLACEHOLDER;
+                            gzip on;
+                            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+                            location /api/ {
+                                proxy_pass $backend_upstream/api/;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                                proxy_set_header X-Forwarded-Proto $scheme;
+                                proxy_connect_timeout 10s;
+                                proxy_read_timeout 30s;
+                            }
+                            location /health {
+                                proxy_pass $backend_upstream/health;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                            }
+                            location /ready {
+                                proxy_pass $backend_upstream/ready;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                            }
+                            location / {
+                                try_files $uri $uri/ /index.html;
+                            }
+                            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                                expires 1y;
+                                add_header Cache-Control "public, immutable";
+                                try_files $uri =404;
+                            }
+                            add_header X-Frame-Options "SAMEORIGIN" always;
+                            add_header X-Content-Type-Options "nosniff" always;
+                            add_header X-XSS-Protection "1; mode=block" always;
+                        }
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-frontend-nginx-cm"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              # Patch the FQDN into the nginx config data
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.data[default.conf]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: |
+                        server {
+                            listen 80;
+                            server_name _;
+                            root /usr/share/nginx/html;
+                            index index.html;
+                            resolver 10.96.0.10 valid=5s ipv6=off;
+                            set $backend_upstream http://backend.%s.svc.cluster.local:8080;
+                            gzip on;
+                            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+                            location /api/ {
+                                proxy_pass $backend_upstream/api/;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                                proxy_set_header X-Forwarded-Proto $scheme;
+                                proxy_connect_timeout 10s;
+                                proxy_read_timeout 30s;
+                            }
+                            location /health {
+                                proxy_pass $backend_upstream/health;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                            }
+                            location /ready {
+                                proxy_pass $backend_upstream/ready;
+                                proxy_http_version 1.1;
+                                proxy_set_header Host $host;
+                                proxy_set_header X-Real-IP $remote_addr;
+                            }
+                            location / {
+                                try_files $uri $uri/ /index.html;
+                            }
+                            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                                expires 1y;
+                                add_header Cache-Control "public, immutable";
+                                try_files $uri =404;
+                            }
+                            add_header X-Frame-Options "SAMEORIGIN" always;
+                            add_header X-Content-Type-Options "nosniff" always;
+                            add_header X-XSS-Protection "1; mode=block" always;
+                        }
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 14. Frontend Service
+          # ===========================================================
+          - name: frontend-service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      name: frontend
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/name: frontend
+                        app.kubernetes.io/component: frontend
+                        app.kubernetes.io/part-of: three-tier-app
+                    spec:
+                      type: ClusterIP
+                      selector:
+                        app: frontend
+                      ports:
+                        - name: http
+                          port: 80
+                          targetPort: 8080
+                          protocol: TCP
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-frontend-svc"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 14. Ingress
+          # ===========================================================
+          - name: ingress
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: networking.k8s.io/v1
+                    kind: Ingress
+                    metadata:
+                      name: app-ingress
+                      namespace: ""
+                      labels:
+                        app.kubernetes.io/part-of: three-tier-app
+                        platform.ipp.dhl.com/cloud-type: private
+                      annotations:
+                        # No rewrite — backend routes include /api prefix (e.g. /api/employees)
+                        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+                        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+                        nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+                    spec:
+                      ingressClassName: nginx
+                      rules:
+                        - host: ""
+                          http:
+                            paths:
+                              - path: /api
+                                pathType: Prefix
+                                backend:
+                                  service:
+                                    name: backend
+                                    port:
+                                      number: 8080
+                              - path: /
+                                pathType: Prefix
+                                backend:
+                                  service:
+                                    name: frontend
+                                    port:
+                                      number: 80
+                providerConfigRef:
+                  name: default
+                managementPolicies:
+                  - "*"
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-ingress"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.ingress.host
+                toFieldPath: spec.forProvider.manifest.spec.rules[0].host
+              # Propagate the application URL back to the composite status
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.forProvider.manifest.spec.rules[0].host
+                toFieldPath: status.applicationURL
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "http://%s"
+                policy:
+                  fromFieldPath: Optional
+              # Static cloud-type classification (L1) — the three-tier app runs on
+              # the local (private) cluster in this demo. `metadata.name` is used
+              # as an arbitrary always-present source field; the regexp pattern
+              # below matches any string, so the result is always the literal
+              # "private" regardless of the source's actual value (a
+              # placeholder-less Format string instead leaves Go fmt's
+              # "%!(EXTRA ...)" artifact appended to the output).
+              # Note: only status.cloudType is patched here, not metadata.labels on
+              # the XR — empirically confirmed (crossplane server v2.2.1-up.1) that
+              # ToCompositeFieldPath patches targeting the XR's own metadata.labels
+              # are silently dropped (composed-resource labels below are unaffected).
+              - type: ToCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: status.cloudType
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: ".*"
+                          result: "private"
+                      fallbackTo: Value
+                      fallbackValue: "private"
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 15a. CiliumNetworkPolicy — postgres tier (targeted selector)
+          # ===========================================================
+          - name: netpol-postgres
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: cilium.io/v2
+                    kind: CiliumNetworkPolicy
+                    metadata:
+                      name: netpol-postgres
+                      namespace: ""
+                    spec:
+                      description: "Postgres: allow ingress from backend on 5432 + kubelet health"
+                      endpointSelector:
+                        matchLabels:
+                          app: postgres
+                      ingress:
+                        - fromEndpoints:
+                            - matchLabels:
+                                app: backend
+                          toPorts:
+                            - ports:
+                                - port: "5432"
+                                  protocol: TCP
+                        - fromEntities:
+                            - host
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-netpol-postgres"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 15b. CiliumNetworkPolicy — backend tier (targeted selector)
+          # ===========================================================
+          - name: netpol-backend
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: cilium.io/v2
+                    kind: CiliumNetworkPolicy
+                    metadata:
+                      name: netpol-backend
+                      namespace: ""
+                    spec:
+                      description: "Backend: allow ingress from frontend/nginx on 8080; egress to postgres:5432 + DNS"
+                      endpointSelector:
+                        matchLabels:
+                          app: backend
+                      ingress:
+                        - fromEndpoints:
+                            - matchLabels:
+                                app: frontend
+                          toPorts:
+                            - ports:
+                                - port: "8080"
+                                  protocol: TCP
+                        - fromEndpoints:
+                            - matchLabels:
+                                app.kubernetes.io/name: ingress-nginx
+                                io.kubernetes.pod.namespace: ingress-nginx
+                          toPorts:
+                            - ports:
+                                - port: "8080"
+                                  protocol: TCP
+                        - fromEntities:
+                            - host
+                      egress:
+                        - toEndpoints:
+                            - matchLabels:
+                                app: postgres
+                          toPorts:
+                            - ports:
+                                - port: "5432"
+                                  protocol: TCP
+                        - toEntities:
+                            - kube-apiserver
+                        - toEndpoints:
+                            - matchLabels:
+                                k8s-app: kube-dns
+                                io.kubernetes.pod.namespace: kube-system
+                          toPorts:
+                            - ports:
+                                - port: "53"
+                                  protocol: ANY
+                              rules:
+                                dns:
+                                  - matchPattern: "*"
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-netpol-backend"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None
+
+          # ===========================================================
+          # 15c. CiliumNetworkPolicy — frontend tier (targeted selector)
+          # ===========================================================
+          - name: netpol-frontend
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              metadata:
+                name: ""
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: cilium.io/v2
+                    kind: CiliumNetworkPolicy
+                    metadata:
+                      name: netpol-frontend
+                      namespace: ""
+                    spec:
+                      description: "Frontend: allow ingress from nginx on 8080; egress to backend:8080 + DNS"
+                      endpointSelector:
+                        matchLabels:
+                          app: frontend
+                      ingress:
+                        - fromEndpoints:
+                            - matchLabels:
+                                app.kubernetes.io/name: ingress-nginx
+                                io.kubernetes.pod.namespace: ingress-nginx
+                          toPorts:
+                            - ports:
+                                - port: "8080"
+                                  protocol: TCP
+                        - fromEntities:
+                            - host
+                      egress:
+                        - toEndpoints:
+                            - matchLabels:
+                                app: backend
+                          toPorts:
+                            - ports:
+                                - port: "8080"
+                                  protocol: TCP
+                        - toEndpoints:
+                            - matchLabels:
+                                k8s-app: kube-dns
+                                io.kubernetes.pod.namespace: kube-system
+                          toPorts:
+                            - ports:
+                                - port: "53"
+                                  protocol: ANY
+                              rules:
+                                dns:
+                                  - matchPattern: "*"
+                providerConfigRef:
+                  name: default
+                watch: false
+                readiness:
+                  policy: SuccessfulCreate
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-netpol-frontend"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+            readinessChecks:
+              - type: None

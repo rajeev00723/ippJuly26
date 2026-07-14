@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ipp-platform
+  namespace: argocd
+spec:
+  description: IPP Platform — all tenant claims and compositions
+  sourceRepos:
+    - "http://gitea.gitea.svc.cluster.local:3000/ipp-automation-bot/ipp-platform-claims"
+  destinations:
+    - namespace: "ipp-appbox-*"
+      server: https://kubernetes.default.svc
+    - namespace: crossplane-system
+      server: https://kubernetes.default.svc
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "platform.iip.com"
+      kind: "*"
+    - group: "platform.ipp.dhl.com"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ipp-claims-local
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/ipp-automation-bot/ipp-platform-claims
+        revision: HEAD
+        directories:
+          - path: "appbox/*/*"
+          - path: "clusters/*/*"
+          - path: "vms/*/*"
+          - path: "databases/*/*"
+          - path: "networks/*/*"
+        requeueAfterSeconds: 20
+  template:
+    metadata:
+      name: "ipp-claim-{{.path.basenameNormalized}}"
+      labels:
+        app.kubernetes.io/component: claim
+        app.kubernetes.io/managed-by: ipp-gitops
+    spec:
+      project: ipp-platform
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/ipp-automation-bot/ipp-platform-claims
+        targetRevision: HEAD
+        path: "{{.path.path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: crossplane-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
+      ignoreDifferences:
+        - group: "platform.iip.com"
+          kind: "*"
+          jsonPointers: ["/status"]
+        - group: "platform.ipp.dhl.com"
+          kind: "*"
+          jsonPointers: ["/status"]

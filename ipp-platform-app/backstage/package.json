@@ -1,0 +1,49 @@
+{
+  "name": "idp-demo-backstage",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "plugins/*"
+    ]
+  },
+  "scripts": {
+    "dev": "concurrently \"yarn workspace app start\" \"yarn workspace backend start\"",
+    "start": "yarn workspace app start",
+    "start-backend": "yarn workspace backend start",
+    "build": "backstage-cli repo build --all",
+    "build:all": "backstage-cli repo build --all",
+    "tsc": "tsc",
+    "tsc:full": "tsc --skipLibCheck false --incremental false",
+    "clean": "backstage-cli repo clean",
+    "test": "backstage-cli repo test",
+    "lint": "backstage-cli repo lint --since origin/master",
+    "prettier:check": "prettier --check .",
+    "new": "backstage-cli new --scope internal"
+  },
+  "devDependencies": {
+    "@backstage/cli": "0.26.4",
+    "@backstage/e2e-test-utils": "0.1.1",
+    "concurrently": "^8.0.0",
+    "prettier": "^3.0.3",
+    "typescript": "~5.4.0"
+  },
+  "resolutions": {
+    "@types/react": "^18",
+    "@types/react-dom": "^18"
+  },
+  "prettier": "@backstage/prettier-config",
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": "18 || 20 || 22 || 24"
+  }
+}

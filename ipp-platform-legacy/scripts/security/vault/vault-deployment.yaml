@@ -1,0 +1,115 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+        environment: demo
+        owner: platform-team
+    spec:
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.17
+        args: ["server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+        ports:
+        - containerPort: 8200
+          name: http
+        env:
+        - name: VAULT_DEV_ROOT_TOKEN_ID
+          value: root
+        - name: VAULT_ADDR
+          value: "http://127.0.0.1:8200"
+        - name: SKIP_CHOWN
+          value: "true"
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200
+            port: 8200
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+spec:
+  selector:
+    app: vault
+  ports:
+  - name: http
+    port: 8200
+    targetPort: 8200
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vault-ingress
+  namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: "4m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: vault.ipp.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vault
+            port:
+              number: 8200
+  - host: vault.dpcs.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vault
+            port:
+              number: 8200

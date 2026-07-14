@@ -1,0 +1,84 @@
+# Helm values for ingress-nginx in a KIND cluster
+# Optimised for Apple Silicon (arm64) and host-port exposure
+
+controller:
+  # Use host network port mapping so KIND-mapped ports (80/443) work
+  hostPort:
+    enabled: true
+    ports:
+      http: 80
+      https: 443
+
+  # Schedule on the node labelled ingress-ready=true (control-plane in our KIND config)
+  nodeSelector:
+    ingress-ready: "true"
+    kubernetes.io/os: linux
+
+  tolerations:
+    # Allow scheduling on control-plane nodes that may have NoSchedule taints
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+
+  # KIND does not use an external load balancer; use NodePort as service type
+  service:
+    type: NodePort
+
+  # Publish the status so Ingress objects get an external IP set
+  publishService:
+    enabled: false
+
+  # Extra args useful for local KIND demos
+  extraArgs:
+    # Enable SSL passthrough for ArgoCD gRPC
+    enable-ssl-passthrough: ""
+
+  # Resource limits appropriate for a demo cluster on M5 Pro/Max (48 GB RAM)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # arm64-compatible image (the official chart uses a manifest-list image)
+  image:
+    # The chart default image already supports arm64 via multi-arch manifests
+    # Pinned to a known-good version for reproducibility
+    tag: "v1.10.0"
+
+  # Pod annotations
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "10254"
+
+  # Metrics for Prometheus
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false   # set true if kube-prometheus-stack is installed
+
+  # ConfigMap settings
+  config:
+    # Real IP from X-Forwarded-For
+    use-forwarded-headers: "true"
+    # Needed for ArgoCD WebSocket
+    proxy-read-timeout: "3600"
+    proxy-send-timeout: "3600"
+
+# Default backend (optional; included for completeness)
+defaultBackend:
+  enabled: true
+  nodeSelector:
+    kubernetes.io/os: linux
+  resources:
+    requests:
+      cpu: 10m
+      memory: 20Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi

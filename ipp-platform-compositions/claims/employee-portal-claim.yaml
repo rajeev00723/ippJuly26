@@ -1,0 +1,25 @@
+apiVersion: platform.iip.com/v1alpha1
+kind: ThreeTierAppClaim
+metadata:
+  name: employee-portal
+  namespace: employee-portal
+  labels:
+    platform.iip.com/demo: "true"
+    platform.iip.com/managed-by: bootstrap
+spec:
+  parameters:
+    namespace: employee-portal
+    frontend:
+      image: ipp-platform/employee-frontend:latest
+      replicas: 2
+    backend:
+      image: ipp-platform/employee-backend:latest
+      replicas: 1
+    database:
+      storageGB: 1
+    ingress:
+      host: employee.ipp.local
+    owner:
+      team: platform
+      environment: dev
+      costCenter: platform-eng

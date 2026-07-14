@@ -1,0 +1,303 @@
+---
+# ConstraintTemplate: RequiredLabels
+# Validates that resources have required labels: app, owner, cost-center, environment
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: requiredlabels
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Requires resources to have specific labels defined in the constraint parameters."
+spec:
+  crd:
+    spec:
+      names:
+        kind: RequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package requiredlabels
+
+        violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("Resource is missing required labels: %v", [missing])
+        }
+
+---
+# ConstraintTemplate: NoPrivilegedContainers
+# Validates no containers run in privileged mode
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: noprivilegedcontainers
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Prohibits privileged containers from running in the cluster."
+spec:
+  crd:
+    spec:
+      names:
+        kind: NoPrivilegedContainers
+      validation:
+        openAPIV3Schema:
+          type: object
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package noprivilegedcontainers
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          container.securityContext.privileged == true
+          msg := sprintf("Container '%v' is privileged. Privileged containers are not allowed.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          container.securityContext.privileged == true
+          msg := sprintf("Init container '%v' is privileged. Privileged containers are not allowed.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.ephemeralContainers[_]
+          container.securityContext.privileged == true
+          msg := sprintf("Ephemeral container '%v' is privileged. Privileged containers are not allowed.", [container.name])
+        }
+
+---
+# ConstraintTemplate: AllowedRegistries
+# Validates image registries against an allowed list
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: allowedregistries
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Requires container images to come from approved registries."
+spec:
+  crd:
+    spec:
+      names:
+        kind: AllowedRegistries
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            registries:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package allowedregistries
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not image_allowed(container.image)
+          msg := sprintf("Container '%v' uses image '%v' from a disallowed registry. Allowed registries: %v", [container.name, container.image, input.parameters.registries])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not image_allowed(container.image)
+          msg := sprintf("Init container '%v' uses image '%v' from a disallowed registry. Allowed registries: %v", [container.name, container.image, input.parameters.registries])
+        }
+
+        image_allowed(image) {
+          registry := input.parameters.registries[_]
+          startswith(image, registry)
+        }
+
+        image_allowed(image) {
+          # Allow images without a registry prefix (uses Docker Hub implicitly)
+          not contains(image, "/")
+        }
+
+        image_allowed(image) {
+          # Allow short names that match an allowed prefix (e.g., postgres:14, nginx:stable)
+          registry := input.parameters.registries[_]
+          parts := split(image, ":")
+          name := parts[0]
+          name == registry
+        }
+
+---
+# ConstraintTemplate: RequiredResourceLimits
+# Validates that CPU and memory limits are set on all containers
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: requiredresourcelimits
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Requires containers to have CPU and memory resource limits defined."
+spec:
+  crd:
+    spec:
+      names:
+        kind: RequiredResourceLimits
+      validation:
+        openAPIV3Schema:
+          type: object
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package requiredresourcelimits
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.cpu
+          msg := sprintf("Container '%v' is missing CPU limits. All containers must specify resource limits.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Container '%v' is missing memory limits. All containers must specify resource limits.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not container.resources.limits.cpu
+          msg := sprintf("Init container '%v' is missing CPU limits. All containers must specify resource limits.", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Init container '%v' is missing memory limits. All containers must specify resource limits.", [container.name])
+        }
+
+---
+# Constraint instance: RequiredLabels for employee-portal
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: RequiredLabels
+metadata:
+  name: require-labels-employee-portal
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Enforces required labels on all resources in the employee-portal namespace."
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - employee-portal
+  parameters:
+    labels:
+      - app
+      - owner
+      - cost-center
+      - environment
+
+---
+# Constraint instance: NoPrivilegedContainers for employee-portal
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: NoPrivilegedContainers
+metadata:
+  name: no-privileged-containers-employee-portal
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Disallows privileged containers in the employee-portal namespace."
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - employee-portal
+
+---
+# Constraint instance: AllowedRegistries for employee-portal
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: AllowedRegistries
+metadata:
+  name: allowed-registries-employee-portal
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Restricts container images to approved registries in the employee-portal namespace."
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - employee-portal
+  parameters:
+    registries:
+      - "ghcr.io"
+      - "docker.io"
+      - "registry.k8s.io"
+      - "quay.io"
+      - "idp-demo"
+      - "postgres"
+      - "nginx"
+      - "python"
+
+---
+# Constraint instance: RequiredResourceLimits for employee-portal
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: RequiredResourceLimits
+metadata:
+  name: require-resource-limits-employee-portal
+  labels:
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Requires CPU and memory resource limits on all containers in employee-portal namespace."
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - employee-portal

@@ -1,0 +1,112 @@
+name: IPP Claim Watcher
+# Triggers on every push to ipp-platform-claims (main branch).
+# Validates claim YAML with Conftest and logs the claim path.
+# When Argo CD ApplicationSet fully replaces this workflow, this file
+# is retired. See: ipp-platform-legacy/scripts/README.md — Deprecation Timeline.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'appbox/**/*.yaml'
+      - 'clusters/**/*.yaml'
+      - 'vms/**/*.yaml'
+      - 'databases/**/*.yaml'
+      - 'networks/**/*.yaml'
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'appbox/**/*.yaml'
+      - 'clusters/**/*.yaml'
+      - 'vms/**/*.yaml'
+      - 'databases/**/*.yaml'
+      - 'networks/**/*.yaml'
+
+jobs:
+  validate-claims:
+    name: Validate IPP Claims
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ipp-platform-claims
+        uses: actions/checkout@v4
+        with:
+          path: ipp-platform-claims
+
+      - name: Checkout ipp-platform-policies (for Conftest policies)
+        uses: actions/checkout@v4
+        with:
+          repository: dhl-ipp/ipp-platform-policies
+          path: ipp-platform-policies
+          # Use a deploy key or PAT with read access to ipp-platform-policies
+          token: ${{ secrets.IPP_POLICIES_READ_TOKEN }}
+
+      - name: Install Conftest
+        run: |
+          CONFTEST_VERSION="0.53.0"
+          curl -sL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | tar xz conftest
+          sudo mv conftest /usr/local/bin/
+          conftest --version
+
+      - name: Detect changed claim files
+        id: changed
+        run: |
+          cd ipp-platform-claims
+          # On PR: diff against base; on push to main: diff against HEAD~1
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="HEAD~1"
+          fi
+          FILES=$(git diff --name-only "${BASE}" HEAD -- \
+            'appbox/**/*.yaml' 'clusters/**/*.yaml' 'vms/**/*.yaml' \
+            'databases/**/*.yaml' 'networks/**/*.yaml' 2>/dev/null || \
+            find . -name '*.yaml' -not -name 'CLAIM_TEMPLATE.yaml' | head -50)
+          echo "files=${FILES}" >> "$GITHUB_OUTPUT"
+          echo "Changed claim files:"
+          echo "${FILES}"
+
+      - name: Run Conftest validation
+        run: |
+          cd ipp-platform-claims
+          FAILED=0
+          while IFS= read -r FILE; do
+            [[ -z "$FILE" ]] && continue
+            [[ "$FILE" == *"CLAIM_TEMPLATE"* ]] && continue
+            [[ ! -f "$FILE" ]] && continue
+            echo "── Validating: ${FILE}"
+            conftest test "${FILE}" \
+              --policy ../ipp-platform-policies/conftest/policy/ \
+              --output table || FAILED=1
+            echo "Legacy engine: processing claim [${FILE}]"
+          done <<< "${{ steps.changed.outputs.files }}"
+          exit $FAILED
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## IPP Claim Validation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r FILE; do
+            [[ -z "$FILE" || "$FILE" == *"CLAIM_TEMPLATE"* ]] && continue
+            echo "| \`${FILE}\` | See logs |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "${{ steps.changed.outputs.files }}"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Note**: This workflow is a legacy bridge. Argo CD ApplicationSet \`claims-appset.yaml\` in \`ipp-platform-control\` is the authoritative reconciler." >> "$GITHUB_STEP_SUMMARY"
+
+  notify-bot:
+    name: Notify Automation Bot
+    needs: validate-claims
+    if: github.event_name == 'pull_request' && needs.validate-claims.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signal @ipp-automation-bot
+        run: |
+          echo "Conftest validation passed. @ipp-automation-bot may proceed with merge."
+          # In production: POST to bot webhook or use gh CLI to request review
+          # gh pr review ${{ github.event.pull_request.number }} --approve --body "Conftest passed."

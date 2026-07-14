@@ -1,0 +1,299 @@
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: dev.user
+  title: Developer User
+  description: Application developer working on the employee platform
+spec:
+  profile:
+    displayName: Developer User
+    email: dev.user@acme.local
+  memberOf: [developers]
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: platform.engineer
+  title: Platform Engineer
+  description: Platform engineer responsible for IPP infrastructure
+spec:
+  profile:
+    displayName: Platform Engineer
+    email: platform.engineer@acme.local
+  memberOf: [platform-engineers]
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: ops.support
+  title: Operations Support
+  description: Operations and SRE support engineer
+spec:
+  profile:
+    displayName: Operations Support
+    email: ops.support@acme.local
+  memberOf: [operations-support]
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: security.analyst
+  title: Security Analyst
+  description: Information security and compliance analyst
+spec:
+  profile:
+    displayName: Security Analyst
+    email: security.analyst@acme.local
+  memberOf: [security-team]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: acme-corp
+  title: ACME Corporation
+  description: Root organization group for ACME Corp
+spec:
+  type: organization
+  profile:
+    displayName: ACME Corporation
+    email: info@acme.local
+  children: [developers, platform-engineers, operations-support, security-team]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: developers
+  title: Developers
+  description: Application development team building employee-facing products
+spec:
+  type: team
+  profile:
+    displayName: Developers
+    email: developers@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-engineers
+  title: Platform Engineers
+  description: Platform and infrastructure engineering team managing the IPP
+spec:
+  type: team
+  profile:
+    displayName: Platform Engineers
+    email: platform-engineers@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: operations-support
+  title: Operations Support
+  description: Operations and SRE support team for incident response and reliability
+spec:
+  type: team
+  profile:
+    displayName: Operations Support
+    email: operations-support@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: security-team
+  title: Security Team
+  description: Information security and compliance team
+spec:
+  type: team
+  profile:
+    displayName: Security Team
+    email: security-team@acme.local
+  parent: acme-corp
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: enterprise-apps
+  title: Enterprise Applications
+  description: Domain covering all employee-facing application systems
+spec:
+  owner: developers
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: platform
+  title: Platform
+  description: Domain covering all IPP infrastructure and platform systems
+spec:
+  owner: platform-engineers
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: employee-platform
+  title: Employee Platform
+  description: The employee-facing application platform
+spec:
+  owner: developers
+  domain: enterprise-apps
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: idp-platform
+  title: IPP — Infrastructure Platform Portal
+  description: The IPP tooling and infrastructure platform
+spec:
+  owner: platform-engineers
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: employee-portal
+  title: Employee Portal
+  description: Frontend web application for the employee portal
+  annotations:
+    backstage.io/kubernetes-namespace: employee-app
+    backstage.io/kubernetes-label-selector: app=employee-frontend
+    github.com/project-slug: amitabhmanish13/IPS_app_demo
+  labels:
+    tier: frontend
+    environment: production
+spec:
+  type: website
+  lifecycle: production
+  owner: developers
+  system: employee-platform
+  dependsOn:
+    - component:employee-backend
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: employee-backend
+  title: Employee Backend
+  description: Backend REST API service for the employee portal
+  annotations:
+    backstage.io/kubernetes-namespace: employee-app
+    backstage.io/kubernetes-label-selector: app=employee-backend
+    github.com/project-slug: amitabhmanish13/IPS_app_demo
+  labels:
+    tier: backend
+    environment: production
+spec:
+  type: service
+  lifecycle: production
+  owner: developers
+  system: employee-platform
+  dependsOn:
+    - component:employee-database
+  providesApis:
+    - employee-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: employee-database
+  title: Employee Database
+  description: PostgreSQL database for employee data managed by Crossplane
+  annotations:
+    backstage.io/kubernetes-namespace: employee-app
+  labels:
+    tier: database
+    environment: production
+spec:
+  type: database
+  lifecycle: production
+  owner: platform-engineers
+  system: employee-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: aiops-engine
+  title: AIOps Engine
+  description: AI-powered operations intelligence and incident correlation engine
+  annotations:
+    backstage.io/kubernetes-namespace: aiops
+    backstage.io/kubernetes-label-selector: app=aiops-engine
+    github.com/project-slug: amitabhmanish13/IPS_app_demo
+  labels:
+    tier: platform-service
+    environment: production
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-engineers
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: crossplane-platform
+  title: Crossplane Platform
+  description: Crossplane control plane for infrastructure provisioning
+  annotations:
+    backstage.io/kubernetes-namespace: crossplane-system
+  labels:
+    tier: infrastructure
+    environment: production
+spec:
+  type: library
+  lifecycle: production
+  owner: platform-engineers
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: idp-demo-backstage
+  title: IPP — Infrastructure Platform Portal
+  description: Infrastructure Platform Portal powered by Backstage
+  annotations:
+    backstage.io/kubernetes-namespace: backstage
+    github.com/project-slug: amitabhmanish13/IPS_app_demo
+    # dir:. — docs are pre-built into the image at /app/techdocs-storage;
+    # a ref outside the catalog dir makes techdocs metadata 404.
+    backstage.io/techdocs-ref: dir:.
+  labels:
+    platform: idp
+    tier: platform
+spec:
+  type: website
+  lifecycle: production
+  owner: platform-engineers
+  system: idp-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: employee-api
+  title: Employee API
+  description: REST API for accessing employee data and management operations
+  annotations:
+    backstage.io/kubernetes-namespace: employee-app
+spec:
+  type: openapi
+  lifecycle: production
+  owner: developers
+  system: employee-platform
+  definition: |
+    openapi: "3.0.0"
+    info:
+      title: Employee API
+      version: "1.0.0"
+      description: REST API for employee data management
+    paths:
+      /employees:
+        get:
+          summary: List all employees
+          responses:
+            '200':
+              description: Successful response

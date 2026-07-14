@@ -1,0 +1,245 @@
+---
+# Namespace: employee-portal
+# Applies Pod Security Standards labels for the restricted profile.
+# This replaces the deprecated PodSecurityPolicy (PSP) API removed in k8s 1.25+.
+# The 'restricted' profile enforces the most hardened security settings:
+#   - Non-root user/group required
+#   - Privilege escalation disallowed
+#   - Seccomp profile required
+#   - All Linux capabilities dropped
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: employee-portal
+  labels:
+    kubernetes.io/metadata.name: employee-portal
+    # Pod Security Standards - enforce restricted profile
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    # Warn on restricted violations (shows warnings without blocking)
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    # Audit violations to the audit log
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    # Metadata labels
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+
+---
+# NetworkPolicy: default-deny-all
+# Implements a zero-trust network posture for the employee-portal namespace.
+# All traffic (ingress and egress) is denied by default.
+# Specific allow policies (Cilium or standard NetworkPolicy) must explicitly
+# permit required communication paths.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: >-
+      Default deny-all network policy implementing zero-trust networking.
+      All ingress and egress traffic is denied unless explicitly permitted
+      by additional NetworkPolicy or CiliumNetworkPolicy resources.
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# NetworkPolicy: allow-dns-egress
+# Allows all pods in employee-portal to resolve DNS via kube-dns.
+# Without this, pods cannot resolve service names, blocking all communication.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows egress to kube-dns for DNS resolution. Required for service discovery."
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# NetworkPolicy: allow-frontend-ingress
+# Allows the frontend to receive traffic from the ingress-nginx controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-ingress
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows ingress to frontend pods from ingress-nginx controller pods."
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 3000
+
+---
+# NetworkPolicy: allow-frontend-to-backend
+# Allows frontend pods to make requests to backend pods on port 8080.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows frontend pods to communicate with backend pods on port 8080."
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# NetworkPolicy: allow-backend-to-postgres
+# Allows backend pods to connect to postgres on port 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-postgres
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows backend pods to connect to postgres on port 5432."
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# NetworkPolicy: allow-frontend-egress-to-backend
+# Allows frontend pods to send egress traffic to backend pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-egress-to-backend
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows frontend pods to send traffic to backend pods on port 8080."
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# NetworkPolicy: allow-backend-egress-to-postgres
+# Allows backend pods to send egress traffic to postgres pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress-to-postgres
+  namespace: employee-portal
+  labels:
+    app.kubernetes.io/managed-by: ipp-platform
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    description: "Allows backend pods to send traffic to postgres on port 5432."
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432

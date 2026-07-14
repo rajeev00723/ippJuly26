@@ -1,0 +1,63 @@
+---
+# Ingress for Hubble UI
+# Exposes the Hubble network observability dashboard at hubble.dpcs.local
+#
+# Prerequisites:
+#   1. ingress-nginx controller must be installed and running
+#   2. DNS entry (or /etc/hosts) must point hubble.dpcs.local to the
+#      ingress-nginx LoadBalancer or NodePort IP address
+#   3. Hubble UI must be enabled in Cilium values (hubble.ui.enabled: true)
+#
+# For local development with KIND, add to /etc/hosts:
+#   127.0.0.1  hubble.dpcs.local
+# Then use: kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 80:80
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hubble-ui-ingress
+  namespace: kube-system
+  labels:
+    app: hubble-ui
+    app.kubernetes.io/managed-by: platform-idp
+    environment: demo
+    owner: platform-team
+    cost-center: platform
+  annotations:
+    # Use the nginx ingress class
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # WebSocket support required for Hubble UI live streaming
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # WebSocket upgrade headers handled by nginx ingress automatically
+    # Buffer settings for flow data streaming
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    # CORS headers to allow browser access from different origins
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,X-LANG,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,X-Api-Key,X-Device-Id,Access-Control-Allow-Origin"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hubble.ipp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hubble-ui
+                port:
+                  number: 80
+    - host: hubble.dpcs.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hubble-ui
+                port:
+                  number: 80

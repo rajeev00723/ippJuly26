@@ -1,0 +1,77 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: kind-cluster
+  labels:
+    platform.iip.com/composition: kind-cluster
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.iip.com/v1alpha1
+    kind: XKindCluster
+
+  mode: Pipeline
+  pipeline:
+    - step: provision-cluster-namespace
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: cluster-namespace
+            base:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                labels:
+                  platform.iip.com/managed-by: crossplane
+                  platform.iip.com/type: kind-cluster-sim
+                  platform.ipp.dhl.com/cloud-type: private
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "cluster-%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: metadata.labels["platform.iip.com/environment"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.ownerTeam
+                toFieldPath: metadata.labels["platform.iip.com/owner"]
+              # Static cloud-type classification (L1) — kind/vcluster targets are
+              # always private-cloud, so this is a constant, not derived from a
+              # claim field. `apiVersion` is used as an arbitrary always-present
+              # source field; the regexp pattern below matches any string, so the
+              # result is always the literal "private" regardless of the source's
+              # actual value (a placeholder-less Format string instead leaves Go
+              # fmt's "%!(EXTRA ...)" artifact appended to the output; an empty
+              # `patterns` list is rejected by function-patch-and-transform with
+              # "at least one pattern must be specified").
+              # Note: only status.cloudType is patched here, not metadata.labels on
+              # the XR — empirically confirmed (crossplane server v2.2.1-up.1) that
+              # ToCompositeFieldPath patches targeting the XR's own metadata.labels
+              # are silently dropped (composed-resource labels below are unaffected).
+              - type: ToCompositeFieldPath
+                fromFieldPath: apiVersion
+                toFieldPath: status.cloudType
+                transforms:
+                  - type: match
+                    match:
+                      patterns:
+                        - type: regexp
+                          regexp: ".*"
+                          result: "private"
+                      fallbackTo: Value
+                      fallbackValue: "private"
+            # A plain v1 Namespace has no status.conditions[type=Ready] — it uses
+            # status.phase instead. Without this, Crossplane's default readiness check
+            # (which looks for a Ready condition) never succeeds and the claim hangs
+            # at READY=False forever even though the namespace was created successfully.
+            readinessChecks:
+              - type: None
